@@ -77,28 +77,41 @@ function joinSession(s){
 }
 async function loadFiles(files){
   status('Reading session CSVs…');
-  sessions=new Map();
+  let recognized=0;
   for(const f of files){
     if(f.size>60*1024*1024){status('A selected file is larger than 60 MB.',true);return}
     let rows;
     try{rows=parseCSV(await f.text())}catch(e){status(f.name+': '+e.message,true);return}
     const kind=classify(f.name,rows);if(!kind)continue;
+    recognized++;
     const key=sessionKey(f.name,kind);
     if(!sessions.has(key))sessions.set(key,{key,trials:null,samples:null,hmd:null,names:{}});
-    const s=sessions.get(key);s[kind]=rows;s.names[kind]=f.name;
+    const bundle=sessions.get(key);bundle[kind]=rows;bundle.names[kind]=f.name;
+    if(bundle.trials&&bundle.samples)joinSession(bundle);
   }
-  for(const s of sessions.values())joinSession(s);
-  for(const [k,s] of [...sessions])if(!s.joined?.length)sessions.delete(k);
-  if(!sessions.size){status('No complete unified session found. Select matching *_Trials_*.csv and *_Samples_*.csv files.',true);resetUI();return}
+  if(!recognized){status('No recognized unified CSV was selected. Use *_Trials_*.csv, *_Samples_*.csv, or optional *_HMD_*.csv.',true);return}
+  const complete=[...sessions.values()].filter(x=>x.joined?.length);
+  if(!complete.length){
+    const staged=[...sessions.values()].map(x=>{
+      const have=[x.trials?'Trials':null,x.samples?'Samples':null,x.hmd?'HMD':null].filter(Boolean).join(' + ');
+      const need=[!x.trials?'Trials':null,!x.samples?'Samples':null].filter(Boolean).join(' + ');
+      return x.key+': loaded '+(have||'nothing')+(need?' — now add matching '+need+'.':'');
+    }).join(' ');
+    status(staged);
+    resetUI();
+    return;
+  }
   status('');
   populateSessions();
 }
 function resetUI(){$('controls').hidden=true;$('viewer').hidden=true;$('errorPanel').hidden=true;$('sessionCount').textContent='0';$('trialCount').textContent='0';$('sampleCount').textContent='0';$('hmdState').textContent='not loaded'}
 function populateSessions(){
+  const complete=[...sessions.values()].filter(x=>x.joined?.length);
   $('controls').hidden=false;
-  const sel=$('sessionSelect');sel.replaceChildren();
-  for(const s of sessions.values()){const o=el('option','',s.key);o.value=s.key;sel.append(o)}
-  $('sessionCount').textContent=sessions.size;
+  const sel=$('sessionSelect'),previous=sel.value;sel.replaceChildren();
+  for(const bundle of complete){const o=el('option','',bundle.key);o.value=bundle.key;sel.append(o)}
+  if(complete.some(x=>x.key===previous))sel.value=previous;
+  $('sessionCount').textContent=complete.length;
   sel.onchange=populateTasks;
   populateTasks();
 }
@@ -138,6 +151,14 @@ function selectTrial(){
   const s=currentSession(),id=$('trialSelect').value;
   active=s.joined.find(x=>x.meta.TrialID===id)||null;
   if(!active)return;
+  const canonicalButton=document.querySelector('[data-frame="canonical"]');
+  const canCanonical=canonicalAvailable(active);
+  canonicalButton.disabled=!canCanonical;
+  canonicalButton.title=canCanonical?'':'Canonical transform is not saved reliably for this trial; World view only.';
+  if(!canCanonical&&frame==='canonical'){
+    frame='world';
+    document.querySelectorAll('[data-frame]').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.frame==='world')));
+  }
   playTime=duration(active);pause();$('viewer').hidden=false;
   buildMetadata();drawAll();updateCounters(s);
 }
@@ -164,10 +185,13 @@ function trialCenter(t){
     if(validXYZ(c))return c;
   }
   for(const r of t.samples){const a=anchorFromSample(r);if(a)return a}
-  const targets=t.samples.map(r=>sampleXYZ(r,'Target')).filter(validXYZ);
-  if(targets.length)return [0,1,2].map(i=>mean(targets.map(p=>p[i])));
-  const pts=t.samples.map(r=>sampleXYZ(r)).filter(validXYZ);
-  return [0,1,2].map(i=>mean(pts.map(p=>p[i])));
+  return null;
+}
+function canonicalAvailable(t){
+  if(!t)return false;
+  if(t.meta.Task==='Ellipse')return t.samples.some(r=>validXYZ([num(r.LocalX),num(r.LocalY),num(r.LocalZ)]));
+  if(t.meta.Task==='Sphere')return trialCenter(t)!==null;
+  return false;
 }
 function rotateZ(v,deg){const a=-deg*Math.PI/180,c=Math.cos(a),s=Math.sin(a);return [c*v[0]-s*v[1],s*v[0]+c*v[1],v[2]]}
 function rotateY(v,deg){const a=-deg*Math.PI/180,c=Math.cos(a),s=Math.sin(a);return [c*v[0]-s*v[2],v[1],s*v[0]+c*v[2]]}
@@ -180,7 +204,7 @@ function canonicalPoint(t,r,kind='trace'){
     }
   }
   const p=sampleXYZ(r,kind==='target'?'Target':'World');if(!validXYZ(p))return null;
-  const c=trialCenter(t);let v=p.map((x,i)=>x-c[i]);
+  const c=trialCenter(t);if(!c)return null;let v=p.map((x,i)=>x-c[i]);
   const angle=num(r.StimulusAngleDeg)||0;
   if(m.Task==='Trefoil3D'&&m.Condition==='Rotating')v=rotateZ(v,angle);
   else if(m.Task==='Trefoil2D')v=rotateZ(v,angle);
@@ -222,8 +246,8 @@ function buildMetadata(){
   fillDL($('metrics'),metrics);
   $('errorPanel').hidden=!errors.length;
   const warns=[];
-  if(m.Task==='Cube'&&m.Condition==='Rotating')warns.push('Rotating Cube does not save the cube rotation angle per sample. The viewer shows the saved target points and raw/world trace, but does not claim to reconstruct the full rotating cube pose.');
-  if(frame==='canonical'&&m.Task==='Cube'&&m.Condition==='Rotating')warns.push('Canonical Cube view only recenters the trace; no rotation removal is applied.');
+  if(!canonicalAvailable(active))warns.push('Canonical transform is not saved reliably for this trial, so the inspector intentionally provides World view only rather than estimating a stimulus centre.');
+  if(m.Task==='Cube')warns.push('Unified Cube samples contain target error but not sample-aligned TargetXYZ. Rotating Cube also does not save the cube rotation angle per sample, so this viewer does not claim to reconstruct cube geometry from the CSV.');
   if(frame==='canonical'&&m.Task==='Ellipse')warns.push('Ellipse canonical coordinates use the LocalXYZ values saved by the current experiment build.');
   $('warningBox').hidden=!warns.length;$('warningBox').textContent=warns.join(' ');
 }
