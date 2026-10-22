@@ -1,3 +1,4 @@
+import {deriveSessionGeometry,prepareTrial,canDerotate,tracePoint,savedTargetPoint,currentAngle,groundTruth,loadTrefoil3DReference} from './session-geometry.mjs?v=1';
 const $=id=>document.getElementById(id);
 const params=new URLSearchParams(location.search);
 const scope=params.get('scope')==='full'?'full':'calibration';
@@ -8,7 +9,7 @@ const mean=a=>a.length?a.reduce((s,v)=>s+v,0)/a.length:null;
 const median=a=>{if(!a.length)return null;const b=[...a].sort((x,y)=>x-y),m=Math.floor(b.length/2);return b.length%2?b[m]:(b[m-1]+b[m])/2};
 const quantile=(a,q)=>{if(!a.length)return null;const b=[...a].sort((x,y)=>x-y),p=(b.length-1)*q,i=Math.floor(p),f=p-i;return b[i+1]===undefined?b[i]:b[i]+f*(b[i+1]-b[i])};
 const el=(tag,cls,text)=>{const x=document.createElement(tag);if(cls)x.className=cls;if(text!==undefined)x.textContent=text;return x};
-let sessions=new Map(),active=null,frame='world',view='3d',playTime=Infinity,playing=false,raf=null,lastTs=null,yaw=.65,pitch=.45,zoom=1,projected=[];
+let sessions=new Map(),active=null,activeGeometry=null,ref3D=null,frame='world',view='3d',playTime=Infinity,playing=false,raf=null,lastTs=null,yaw=.65,pitch=.45,zoom=1,projected=[];
 
 $('scopeBadge').textContent=scope==='calibration'?'Calibration-only':'Full session';
 $('scopeBadge').className='badge '+scope;
@@ -74,6 +75,8 @@ function joinSession(s){
     samples:(sampleGroups.get(t.TrialID)||[]).sort((a,b)=>(num(a.TimeSec)||0)-(num(b.TimeSec)||0)),
     hmd:(hmdGroups.get(t.TrialID)||[]).sort((a,b)=>(num(a.TrialTimeSec)||0)-(num(b.TrialTimeSec)||0))
   })).filter(t=>t.samples.length);
+  s.geometry=deriveSessionGeometry(s.joined);
+  for(const t of s.joined)prepareTrial(t,s.geometry);
 }
 async function loadFiles(files){
   status('Reading session CSVs…');
@@ -147,14 +150,19 @@ function populateTrials(){
   $('trialSelect').onchange=selectTrial;
   selectTrial();
 }
-function selectTrial(){
+async function selectTrial(){
   const s=currentSession(),id=$('trialSelect').value;
   active=s.joined.find(x=>x.meta.TrialID===id)||null;
   if(!active)return;
+  activeGeometry=s.geometry||deriveSessionGeometry(s.joined);
+  prepareTrial(active,activeGeometry);
+  if(active.meta.Task==='Trefoil3D'&&!ref3D){
+    try{ref3D=await loadTrefoil3DReference()}catch(e){console.error(e);status(e.message,true)}
+  }
   const canonicalButton=document.querySelector('[data-frame="canonical"]');
-  const canCanonical=canonicalAvailable(active);
+  const canCanonical=canDerotate(active,activeGeometry);
   canonicalButton.disabled=!canCanonical;
-  canonicalButton.title=canCanonical?'':'Canonical transform is not saved reliably for this trial; World view only.';
+  canonicalButton.title=canCanonical?'':'A reliable canonical transform is not available for this trial.';
   if(!canCanonical&&frame==='canonical'){
     frame='world';
     document.querySelectorAll('[data-frame]').forEach(x=>x.setAttribute('aria-pressed',String(x.dataset.frame==='world')));
@@ -174,47 +182,7 @@ function duration(t){
 }
 function sampleXYZ(r,prefix='World'){return [num(r[prefix+'X']),num(r[prefix+'Y']),num(r[prefix+'Z'])]}
 function validXYZ(v){return v.every(Number.isFinite)}
-function anchorFromSample(r){
-  const a=[num(r.HMDAnchorWorldX),num(r.HMDAnchorWorldY),num(r.HMDAnchorWorldZ)];
-  return validXYZ(a)?a:null;
-}
-function trialCenter(t){
-  const m=t.meta;
-  if(m.Task==='Sphere'){
-    const c=[num(m.SphereCenterX),num(m.SphereCenterY),num(m.SphereCenterZ)];
-    if(validXYZ(c))return c;
-  }
-  for(const r of t.samples){const a=anchorFromSample(r);if(a)return a}
-  return null;
-}
-function canonicalAvailable(t){
-  if(!t)return false;
-  if(t.meta.Task==='Ellipse')return t.samples.some(r=>validXYZ([num(r.LocalX),num(r.LocalY),num(r.LocalZ)]));
-  if(t.meta.Task==='Sphere')return trialCenter(t)!==null;
-  return false;
-}
-function rotateZ(v,deg){const a=-deg*Math.PI/180,c=Math.cos(a),s=Math.sin(a);return [c*v[0]-s*v[1],s*v[0]+c*v[1],v[2]]}
-function rotateY(v,deg){const a=-deg*Math.PI/180,c=Math.cos(a),s=Math.sin(a);return [c*v[0]-s*v[2],v[1],s*v[0]+c*v[2]]}
-function canonicalPoint(t,r,kind='trace'){
-  const m=t.meta;
-  if(m.Task==='Ellipse'){
-    if(kind==='trace'){
-      const p=[num(r.LocalX),num(r.LocalY),num(r.LocalZ)];
-      if(validXYZ(p))return p;
-    }
-  }
-  const p=sampleXYZ(r,kind==='target'?'Target':'World');if(!validXYZ(p))return null;
-  const c=trialCenter(t);if(!c)return null;let v=p.map((x,i)=>x-c[i]);
-  const angle=num(r.StimulusAngleDeg)||0;
-  if(m.Task==='Trefoil3D'&&m.Condition==='Rotating')v=rotateZ(v,angle);
-  else if(m.Task==='Trefoil2D')v=rotateZ(v,angle);
-  else if(m.Task==='Sphere')v=rotateY(v,angle);
-  return v;
-}
 function worldPoint(r,kind='trace'){const p=sampleXYZ(r,kind==='target'?'Target':'World');return validXYZ(p)?p:null}
-function pointsFor(t,kind){
-  return t.samples.map(r=>frame==='world'?worldPoint(r,kind):canonicalPoint(t,r,kind)).filter(Boolean);
-}
 function hmdPoints(t){
   if(frame==='canonical')return [];
   return t.hmd.map(r=>[num(r.HMDWorldX),num(r.HMDWorldY),num(r.HMDWorldZ)]).filter(validXYZ);
@@ -246,9 +214,14 @@ function buildMetadata(){
   fillDL($('metrics'),metrics);
   $('errorPanel').hidden=!errors.length;
   const warns=[];
-  if(!canonicalAvailable(active))warns.push('Canonical transform is not saved reliably for this trial, so the inspector intentionally provides World view only rather than estimating a stimulus centre.');
-  if(m.Task==='Cube')warns.push('Unified Cube samples contain target error but not sample-aligned TargetXYZ. Rotating Cube also does not save the cube rotation angle per sample, so this viewer does not claim to reconstruct cube geometry from the CSV.');
-  if(frame==='canonical'&&m.Task==='Ellipse')warns.push('Ellipse canonical coordinates use the LocalXYZ values saved by the current experiment build.');
+  if(!canDerotate(active,activeGeometry))warns.push('A reliable canonical transform is not available for this trial, so World view is used.');
+  if(m.Task==='Cube'&&String(m.Condition).toLowerCase()==='rotating'){
+    const fit=active.cubeSpinFit;
+    if(fit?.confident)warns.push(`Cube spin recovered from TargetError/DistanceToCurve: ${fit.omega.toFixed(2)}°/s, θ₀=${fit.theta0.toFixed(2)}°, fit RMS=${(fit.rms*1000).toFixed(3)} mm.`);
+    else warns.push('Cube rotation angle was not saved directly and could not be recovered confidently.');
+  }
+  if(frame==='canonical'&&m.Task==='Ellipse')warns.push('Ellipse canonical coordinates use LocalXYZ saved directly by Unity.');
+  if(m.Task==='Trefoil3D')warns.push('3D trefoil ground truth includes the calibration model’s fixed 90° Y base rotation before dynamic Z rotation.');
   $('warningBox').hidden=!warns.length;$('warningBox').textContent=warns.join(' ');
 }
 function fillDL(dl,pairs){dl.replaceChildren();for(const [k,v] of pairs){dl.append(el('dt','',k),el('dd','',String(v)))}}
@@ -280,19 +253,40 @@ function drawPath(ctx,pts,to,color,width=2,alpha=1,dashed=false){
   pts.forEach((p,i)=>{const q=to(p);i?ctx.lineTo(q[0],q[1]):ctx.moveTo(q[0],q[1])});ctx.stroke();ctx.restore();
 }
 function drawSpace(){
-  if(!active)return;const {ctx,w,h}=canvas('space'),rows=visibleSamples(active);
-  const trace=rows.map(r=>frame==='world'?worldPoint(r):canonicalPoint(active,r)).filter(Boolean);
-  const targets=$('showTarget').checked?rows.map(r=>frame==='world'?worldPoint(r,'target'):canonicalPoint(active,r,'target')).filter(Boolean):[];
+  if(!active)return;
+  const {ctx,w,h}=canvas('space'),rows=visibleSamples(active);
+  const trace=rows.map((r,i)=>tracePoint(active,r,active.samples.indexOf(r),activeGeometry,frame)).filter(Boolean);
+  const savedTargets=$('showTarget').checked
+    ?rows.map(r=>savedTargetPoint(active,r,active.samples.indexOf(r),activeGeometry,frame)).filter(Boolean)
+    :[];
+  const angle=currentAngle(active,rows);
+  const refs=$('showTarget').checked?groundTruth(active,activeGeometry,frame,angle,ref3D):[];
   const hmd=$('showHMD').checked?hmdPoints(active):[];
-  const all=[...trace,...targets,...hmd];const b=bounds(all),to=p=>projectPoint(p,w,h,b);
+  const all=[...trace,...savedTargets,...hmd,...refs.flatMap(r=>r.points)];
+  const b=bounds(all),to=p=>projectPoint(p,w,h,b);
   ctx.fillStyle='#fafafa';ctx.fillRect(0,0,w,h);
   ctx.strokeStyle='#e5e5e5';ctx.lineWidth=1;ctx.beginPath();ctx.moveTo(w/2,0);ctx.lineTo(w/2,h);ctx.moveTo(0,h/2);ctx.lineTo(w,h/2);ctx.stroke();
-  drawPath(ctx,targets,to,'#8a8f98',1.5,.85,true);drawPath(ctx,hmd,to,'#7a4aa8',1.5,.7,false);drawPath(ctx,trace,to,'#2563c9',2.2,.95,false);
+
+  for(const r of refs){
+    const col=r.kind==='indicator'?'#c15f19':r.kind==='secondary'?'#b8a78e':'#59636b';
+    const width=r.kind==='indicator'?2.4:r.kind==='secondary'?1:1.7;
+    const alpha=r.kind==='secondary'?.35:.9;
+    drawPath(ctx,r.points,to,col,width,alpha,r.kind==='secondary');
+  }
+  drawPath(ctx,savedTargets,to,'#8a8f98',1.2,.55,true);
+  drawPath(ctx,hmd,to,'#7a4aa8',1.5,.7,false);
+  drawPath(ctx,trace,to,'#2563c9',2.2,.95,false);
   if(trace.length){const q=to(trace.at(-1));ctx.fillStyle='#2563c9';ctx.beginPath();ctx.arc(q[0],q[1],4.5,0,Math.PI*2);ctx.fill()}
   projected=trace.map(to);
-  const lg=[['trace','Trace']];if(targets.length)lg.push(['target','Saved target']);if(hmd.length)lg.push(['hmd','HMD path']);
+
+  const lg=[['trace','Trace']];
+  if(refs.some(r=>r.kind==='ground'))lg.push(['target','Ground truth']);
+  if(refs.some(r=>r.kind==='indicator'))lg.push(['indicator','Task indicator']);
+  if(savedTargets.length)lg.push(['saved','Saved nearest target']);
+  if(hmd.length)lg.push(['hmd','HMD path']);
   const ul=$('legend');ul.replaceChildren(...lg.map(([c,t])=>{const li=el('li');li.append(el('i',c),t);return li}));
-  $('frameNote').textContent=frame==='world'?'World coordinates':'Canonical / stimulus-relative coordinates';
+
+  $('frameNote').textContent=frame==='world'?'World coordinates':'De-rotated stimulus frame';
   $('time').max=duration(active);$('time').value=Math.min(playTime,duration(active));$('clock').textContent=`${fmt(Math.min(playTime,duration(active)),2)} / ${fmt(duration(active),2)} s`;
 }
 function drawError(){
@@ -307,7 +301,7 @@ function drawError(){
   ctx.strokeStyle='#2563c9';ctx.lineWidth=2;ctx.beginPath();errors.forEach((p,i)=>i?ctx.lineTo(x(p.t),y(p.e)):ctx.moveTo(x(p.t),y(p.e)));ctx.stroke();
 }
 function drawAll(){buildMetadata();drawSpace();drawError()}
-document.querySelectorAll('[data-frame]').forEach(b=>b.onclick=()=>{frame=b.dataset.frame;document.querySelectorAll('[data-frame]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));drawAll()});
+document.querySelectorAll('[data-frame]').forEach(b=>b.onclick=()=>{if(b.disabled)return;frame=b.dataset.frame;document.querySelectorAll('[data-frame]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));drawAll()});
 document.querySelectorAll('[data-view]').forEach(b=>b.onclick=()=>{view=b.dataset.view;document.querySelectorAll('[data-view]').forEach(x=>x.setAttribute('aria-pressed',String(x===b)));drawSpace()});
 $('showTarget').onchange=drawSpace;$('showHMD').onchange=drawSpace;
 $('time').oninput=()=>{pause();playTime=Number($('time').value);drawAll()};
