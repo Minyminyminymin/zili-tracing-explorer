@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Zili Lab Session Inspector</title>
+<meta name="description" content="Inspect recorded Cube, Trefoil3D, Sphere, Ellipse and Trefoil2D trials from the unified Zili Lab VR CSV export.">
+<link rel="stylesheet" href="session.css?v=1">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 5c7 0 8 10 2 13.5S5 20 7.5 14.5 18 8 21.5 13 20 25 15 25" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
+    <div>
+      <strong>Session Inspector</strong>
+      <span id="scopeBadge" class="badge"></span>
+    </div>
+  </div>
+  <div class="topActions">
+    <a class="btn" href="index.html">Main-trial analysis</a>
+    <label class="btn primary upload">Load session CSVs
+      <input id="files" type="file" accept=".csv,text/csv" multiple>
+    </label>
+  </div>
+</header>
+
+<main>
+  <div id="status" role="status" aria-live="polite">
+    Load <code>*_Trials_*.csv</code> and <code>*_Samples_*.csv</code> from one or more sessions. <code>*_HMD_*.csv</code> is optional.
+  </div>
+
+  <section class="panel sourcePanel">
+    <div class="sourceSummary">
+      <div><span class="eyebrow">Loaded sessions</span><strong id="sessionCount">0</strong></div>
+      <div><span class="eyebrow">Visible trials</span><strong id="trialCount">0</strong></div>
+      <div><span class="eyebrow">Samples</span><strong id="sampleCount">0</strong></div>
+      <div><span class="eyebrow">HMD stream</span><strong id="hmdState">not loaded</strong></div>
+    </div>
+    <p id="scopeNote" class="note"></p>
+  </section>
+
+  <section id="controls" class="panel controls" hidden>
+    <label>Session
+      <select id="sessionSelect"></select>
+    </label>
+    <label>Task
+      <select id="taskSelect"></select>
+    </label>
+    <label>Condition
+      <select id="conditionSelect"></select>
+    </label>
+    <label>Trial
+      <select id="trialSelect"></select>
+    </label>
+  </section>
+
+  <section id="viewer" class="viewer" hidden>
+    <section class="panel plotPanel">
+      <div class="plotHead">
+        <div>
+          <span class="eyebrow" id="trialKicker">Trial</span>
+          <h1 id="trialTitle">—</h1>
+          <p id="trialSubtitle" class="note"></p>
+        </div>
+        <div class="buttonGroups">
+          <div class="seg" role="group" aria-label="Coordinate frame">
+            <button type="button" data-frame="world" aria-pressed="true">World</button>
+            <button type="button" data-frame="canonical" aria-pressed="false">De-rotated</button>
+          </div>
+          <div class="seg" role="group" aria-label="Projection">
+            <button type="button" data-view="xy">XY</button>
+            <button type="button" data-view="xz">XZ</button>
+            <button type="button" data-view="yz">YZ</button>
+            <button type="button" data-view="3d" aria-pressed="true">3D</button>
+          </div>
+        </div>
+      </div>
+
+      <div class="canvasWrap">
+        <canvas id="space" tabindex="0" aria-label="Trial trajectory view"></canvas>
+        <ul id="legend" class="legend"></ul>
+        <span id="frameNote" class="frameNote"></span>
+      </div>
+
+      <div class="playbar">
+        <button id="playPause" class="btn" type="button">Play</button>
+        <button id="restart" class="btn" type="button">Restart</button>
+        <label>Elapsed
+          <input id="time" type="range" min="0" max="30" step=".01" value="30">
+        </label>
+        <strong id="clock" class="mono">—</strong>
+      </div>
+    </section>
+
+    <aside class="panel side">
+      <section>
+        <h2>Trial metadata</h2>
+        <dl id="metadata" class="facts"></dl>
+      </section>
+      <section>
+        <h2>Trace QC</h2>
+        <dl id="metrics" class="facts"></dl>
+      </section>
+      <section class="toggles">
+        <h2>Overlays</h2>
+        <label><input id="showTarget" type="checkbox" checked> Ground truth / task reference</label>
+        <label><input id="showHMD" type="checkbox"> HMD path</label>
+      </section>
+      <section id="warningBox" class="warning" hidden></section>
+    </aside>
+  </section>
+
+  <section id="errorPanel" class="panel errorPanel" hidden>
+    <div class="plotHead">
+      <div>
+        <span class="eyebrow">Trace QC</span>
+        <h2>Target error over time</h2>
+        <p class="note">Shown only when the experiment saved a per-sample target error for this task.</p>
+      </div>
+    </div>
+    <canvas id="errorPlot"></canvas>
+  </section>
+
+  <section id="fullOnly" class="panel fullOnly" hidden>
+    <h2>Main-trial analysis remains unchanged</h2>
+    <p>The original Minyoung comparison tool is preserved separately. This page adds session-wide inspection without replacing its correspondence, Z-comparison, playback, cycle review, or pair-matrix analysis.</p>
+    <a class="btn primary" href="index.html">Open main-trial analysis</a>
+  </section>
+</main>
+
+<footer>
+  <p>Files are processed locally in this browser. Nothing is uploaded by this page.</p>
+  <p id="privacyNote"></p>
+</footer>
+
+<script type="module" src="session.mjs?v=2"></script>
+</body>
+</html>
