@@ -496,6 +496,9 @@ export function summary(){
  if(!model||!pairResults.length)return null;const f=pairResults.filter(p=>p.mae!==null).map(p=>p.mae);
  return {label:sourceLabel,trials:model.trials.length,samples:model.samples,pairs:f.length,mean:f.reduce((s,v)=>s+v,0)/f.length,min:Math.min(...f),max:Math.max(...f),mode};
 }
+// Replace the drawing trials with an uploaded session's main trials (rows already in the pilot column layout).
+export function useRows(next,label,geo){rows=next;cfg={...DEFAULTS,...(geo||{}),r1:next[0]?.R1??DEFAULTS.r1,r2:next[0]?.R2??DEFAULTS.r2};syncControls();sourceLabel=label;pairResults=[];recompute();}
+export function usePilot(){loadDefault();}
 export function currentPair(){return result?{a:result.ia,b:result.ib,view:uiMode}:null;}
 
 updateStage();
