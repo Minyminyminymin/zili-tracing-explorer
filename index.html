@@ -3,220 +3,441 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Zili Lab Tracing Inspector</title>
-<meta name="description" content="Inspect how repeated drawings of the same rotating trefoil differ, point by point, with full provenance.">
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23111'/%3E%3Cpath d='M16 7c6 0 7 9 2 12s-11 1-9-4 9-6 12-1-1 10-5 10' fill='none' stroke='%23fff' stroke-width='2.2'/%3E%3C/svg%3E">
-<link rel="stylesheet" href="style.css?v=order2">
+<title>Zili Lab Tracing Explorer</title>
+<meta name="description" content="Calibration accuracy and drawing consistency for the Zili Lab VR tracing studies.">
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231c2226'/%3E%3Cpath d='M16 7c6 0 7 9 2 12s-11 1-9-4 9-6 12-1-1 10-5 10' fill='none' stroke='%23fff' stroke-width='2.2'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=site1">
 </head>
-<body>
-<header class="topbar">
-  <div class="brand">
+<body data-page="overview">
+<a class="skip" href="#content">Skip to content</a>
+<div class="shell">
+
+<aside class="side" aria-label="Site">
+  <a class="brand" href="#/">
     <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 5c7 0 8 10 2 13.5S5 20 7.5 14.5 18 8 21.5 13 20 25 15 25" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
-    <span class="wordmark">Tracing Inspector</span>
-  </div>
-
-  <nav class="modes" aria-label="Interaction mode">
-    <button type="button" data-mode="corr" aria-pressed="true"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="4" cy="8" r="2.2"/><rect x="10" y="5.8" width="4.4" height="4.4"/><path d="M6.4 8h3.4" stroke="currentColor" stroke-width="1.4" stroke-dasharray="1.4 1.2"/></svg>Correspondence</button>
-    <button type="button" data-mode="play" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 3.2v9.6L12.6 8z"/></svg>Time playback</button>
-    <button type="button" data-mode="cycle" aria-pressed="false"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.6a5.4 5.4 0 1 1-5.2 4" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M1.2 3.6l1.8 3.3 3.1-2z"/></svg>Cycle review</button>
+    <span><strong>Tracing Explorer</strong><small>Zili Lab</small></span>
+  </a>
+  <nav class="nav" aria-label="Pages">
+    <a href="#/" data-nav="overview">Overview</a>
+    <div class="navGroup">
+      <a href="#/calibration" data-nav="cal">Calibration</a>
+      <p class="navQ">Does traced hand position match the cube?</p>
+      <ul>
+        <li><a href="#/calibration" data-nav="cal-summary">Summary</a></li>
+        <li><span class="navLabel">Participants</span><div class="pidLinks" id="pidLinks"></div></li>
+      </ul>
+    </div>
+    <div class="navGroup">
+      <a href="#/drawings" data-nav="drw">Drawings</a>
+      <p class="navQ">Do repeated drawings agree in depth?</p>
+      <ul>
+        <li><a href="#/drawings" data-nav="drw-summary">Summary</a></li>
+        <li><a href="#/drawings/pair/1-2" data-nav="drw-pair" id="pairNav">Pair detail</a></li>
+      </ul>
+    </div>
+    <a href="#/methods" data-nav="methods">Methods</a>
   </nav>
+  <p class="sideNote">Loaded CSV files stay in this browser. Nothing is uploaded.</p>
+</aside>
 
-  <div class="source">
-    <p class="sourceLine"><span id="datasetLabel">Built-in pilot (2026-09-23)</span>, <span id="trialCount">—</span> trials, <span id="sampleCount">—</span> samples. HMD columns: <span id="hmdState">—</span></p>
-    <label class="btn upload">Load CSV<input type="file" id="upload" accept=".csv,text/csv"></label>
-    <button id="restore" type="button" class="btn">Use pilot data</button>
-  </div>
-</header>
-
-<main>
+<div class="content" id="content" tabindex="-1">
+<nav class="crumbs" id="crumbs" aria-label="Breadcrumb"></nav>
 <div id="status" role="status" aria-live="polite"></div>
 
-<section class="panel pairBar" aria-label="Trial pair and comparison method">
-  <div class="pick">
-    <canvas class="thumb" id="thumbA" aria-hidden="true"></canvas>
-    <div>
-      <p class="pickLabel mono"><span class="key a" aria-hidden="true"></span>Drawing A</p>
-      <select id="trialA" aria-label="Trial A" class="btn primary"></select>
-      <p class="pickNote" id="descA">—</p>
-    </div>
+<!-- ============ OVERVIEW ============ -->
+<section class="page" data-page="overview" hidden>
+  <header class="pagehead">
+    <h1>Two checks on the VR tracing data</h1>
+    <p class="answer">Calibration asks whether the recorded hand position follows the cube participants were shown. Drawings asks whether one participant's repeated drawings of the rotating trefoil agree in depth.</p>
+  </header>
+  <div class="studies">
+    <article class="study">
+      <h2><a href="#/calibration">Calibration</a></h2>
+      <p class="studyQ">How far is the traced hand position from the cube edges?</p>
+      <p class="studyA" id="ovCalAnswer">Loading…</p>
+      <dl class="figures" id="ovCalFigs"></dl>
+      <p class="studyLinks"><a href="#/calibration">Open the summary</a><span id="ovCalPeople"></span></p>
+    </article>
+    <article class="study">
+      <h2><a href="#/drawings">Drawings</a></h2>
+      <p class="studyQ">How much do two drawings of the same curve differ in depth?</p>
+      <p class="studyA" id="ovDrwAnswer">Loading the pilot trials…</p>
+      <dl class="figures" id="ovDrwFigs"></dl>
+      <p class="studyLinks"><a href="#/drawings">Open the pair overview</a></p>
+    </article>
   </div>
-  <button id="swap" type="button" class="icon swap" aria-label="Swap trials A and B" title="Swap A and B">⇄</button>
-  <div class="pick">
-    <canvas class="thumb" id="thumbB" aria-hidden="true"></canvas>
-    <div>
-      <p class="pickLabel mono"><span class="key b" aria-hidden="true"></span>Drawing B</p>
-      <select id="trialB" aria-label="Trial B" class="btn primary"></select>
-      <p class="pickNote" id="descB">—</p>
-    </div>
-  </div>
-  <div class="pick methodPick">
-    <div>
-      <p class="pickLabel mono">Comparison method</p>
-      <select id="mode" aria-label="Comparison method" class="btn"><option value="nearest">Nearest point, no averaging</option><option value="mean">Mean Z per curve bin</option><option value="all">All Z combinations per bin</option></select>
-      <p class="pickNote">cm and seconds. φ = curve position, θ = stimulus rotation.</p>
-    </div>
-  </div>
-  <button type="button" id="export" class="btn exportBtn">Export pair CSV</button>
+  <section class="section">
+    <h2>Read these before quoting a number</h2>
+    <ul class="caveats" id="ovCaveats">
+      <li><strong>Calibration</strong> uses the summer build (23 June – 27 August 2026) and the 8 participants with initials. Files without an ID and the test file are not included.</li>
+      <li id="ovExcluded"></li>
+      <li><strong>Stability benchmarks are provisional.</strong> They come from ZZ's sessions 11–22, so a participant close to ZZ's level can move in or out of "stable" with a small change in the benchmark.</li>
+      <li><strong>Drawings</strong> is an exploratory pilot: one participant, one session (23 September 2026), 10 trials. A 30 s trial is not necessarily one complete drawing.</li>
+    </ul>
+  </section>
 </section>
 
-<section class="grid">
-  <div class="flow">
-    <section class="panel resultPanel" aria-label="Result">
-      <div class="stats">
-        <div class="stat primaryStat">
-          <p class="statLabel mono" id="metricLabel">Mean |Z A − Z B|</p>
-          <p class="statValue"><strong id="metric">—</strong><span class="unit">cm</span></p>
-          <p class="statSub" id="pairName">—</p>
-        </div>
-        <div class="stat">
-          <p class="statLabel mono">Shared coverage</p>
-          <p class="statValue small"><strong id="coverage">—</strong></p>
-          <div class="meter" aria-hidden="true"><i id="coverageBar"></i></div>
-          <p class="statSub" id="metricNote"></p>
-        </div>
-      </div>
-      <p class="scopeLine">Whole 30 s trials. Drawing A is compared with Drawing B, not with the target.</p>
-      <p class="scopeLine caution" id="cycleScopeNote" hidden>Cycle review does not change this score.</p>
+<!-- ============ CALIBRATION SUMMARY ============ -->
+<section class="page" data-page="cal-summary" hidden>
+  <header class="pagehead">
+    <h1>How closely does the traced hand follow the cube?</h1>
+    <p class="answer" id="calAnswer">Loading…</p>
+  </header>
 
-      <div class="lowerPlot">
-        <div class="bandHead">
-          <div>
-            <h2 class="mono" id="lowerTitle">Where along the curve A and B differ</h2>
-            <ul class="legend static" id="lowerLegend"></ul>
+  <div class="toolbar sticky">
+    <div class="seg" id="calCond" role="group" aria-label="Cube condition"></div>
+    <p class="toolNote" id="calCondNote"></p>
+  </div>
+
+  <section class="section">
+    <div class="sectionHead">
+      <h2>Error falls with practice</h2>
+      <p class="desc">Mean distance from the cube edges in each session. Grey lines are participants; the dark line is their mean. Fewer participants contribute to later sessions.</p>
+    </div>
+    <div class="chart" id="learnChart"></div>
+  </section>
+
+  <section class="section">
+    <div class="sectionHead">
+      <h2>Participants and their sessions</h2>
+      <p class="desc" id="peopleDesc"></p>
+    </div>
+    <div class="tableWrap"><table class="people" id="peopleTable"></table></div>
+    <div class="rampKey" id="peopleKey"></div>
+  </section>
+
+  <section class="section">
+    <div class="sectionHead">
+      <h2>What changes the error</h2>
+      <p class="desc">Linear mixed-effects models with random intercepts for participant and session. Bars are 95% confidence intervals. Effects apply to both conditions; the condition switch above does not change this chart.</p>
+    </div>
+    <div class="seg small" id="modelOutcome" role="group" aria-label="Model outcome"></div>
+    <div class="chart" id="forestChart"></div>
+  </section>
+
+  <section class="section">
+    <div class="sectionHead">
+      <h2>Which edges are hardest</h2>
+      <p class="desc">Mean distance for samples assigned to each edge, averaged within participant first. Edge 5 is the only edge that runs straight into depth.</p>
+    </div>
+    <div class="edgeLayout">
+      <div class="chart" id="edgeChart"></div>
+      <figure class="cubeKey"><canvas id="cubeKey" width="220" height="220" aria-label="Cube edge numbering"></canvas><figcaption>Front face 1–4 faces the participant. Back face 6–9. Edge 5 joins them at the bottom left.</figcaption></figure>
+    </div>
+  </section>
+</section>
+
+<!-- ============ CALIBRATION PARTICIPANT ============ -->
+<section class="page" data-page="cal-participant" hidden>
+  <header class="pagehead">
+    <h1 id="pHead">Participant</h1>
+    <p class="answer" id="pAnswer"></p>
+  </header>
+  <div class="toolbar sticky">
+    <div class="seg" id="pCond" role="group" aria-label="Cube condition"></div>
+    <p class="toolNote">Select a point or a session below to open it.</p>
+  </div>
+  <section class="section">
+    <div class="sectionHead">
+      <h2>Every trial, in order</h2>
+      <p class="desc" id="pChartDesc"></p>
+    </div>
+    <div class="chart" id="pChart"></div>
+  </section>
+  <section class="section">
+    <div class="sectionHead">
+      <h2>Sessions</h2>
+      <p class="desc">Front view of all trials in each session, against the cube edges.</p>
+    </div>
+    <div class="sessionGrid" id="pSessions"><p class="desc">Loading trajectories…</p></div>
+  </section>
+</section>
+
+<!-- ============ CALIBRATION SESSION ============ -->
+<section class="page" data-page="cal-session" hidden>
+  <header class="pagehead">
+    <h1 id="sHead">Session</h1>
+    <p class="answer" id="sAnswer"></p>
+  </header>
+  <div class="toolbar sticky">
+    <div class="seg" id="sCond" role="group" aria-label="Cube condition"></div>
+    <div class="seg" id="sView" role="group" aria-label="View"></div>
+    <div class="seg" id="sColor" role="group" aria-label="Colour"></div>
+    <label class="check"><input type="checkbox" id="sMean" checked> Mean path</label>
+    <span class="spacer"></span>
+    <button class="btn small" id="sPrev" type="button">Previous session</button>
+    <button class="btn small" id="sNext" type="button">Next session</button>
+  </div>
+  <div class="sessionLayout">
+    <section class="panel stagePanel">
+      <div class="stageWrap"><canvas id="sCanvas" tabindex="0" aria-label="Session trajectories against the cube"></canvas><ul class="legend" id="sLegend"></ul><p class="frameChip" id="sFrame"></p></div>
+      <div class="transport">
+        <button class="btn primary" id="sPlay" type="button">Play</button>
+        <div class="seg small" id="sSpeed" role="group" aria-label="Playback speed"></div>
+        <input type="range" id="sScrub" min="0" max="3000" value="0" aria-label="Playback position">
+      </div>
+      <p class="readout" id="sReadout"></p>
+    </section>
+    <aside class="panel sideInfo">
+      <h2>Trials</h2>
+      <div class="trialPick" id="sTrials" role="group" aria-label="Trial"></div>
+      <p class="note" id="sExcl"></p>
+      <h2>Distance by edge</h2>
+      <p class="note">All samples of the selected trial, each assigned to its nearest edge. mm.</p>
+      <table class="edges"><thead><tr><th scope="col">Edge</th><th scope="col">Share</th><th scope="col">Mean</th><th scope="col">Median</th><th scope="col">95th</th></tr></thead><tbody id="sEdges"></tbody></table>
+      <p class="note" id="sEdgeNote"></p>
+    </aside>
+  </div>
+</section>
+
+<!-- ============ DRAWINGS SUMMARY ============ -->
+<section class="page" data-page="drw-summary" hidden>
+  <header class="pagehead">
+    <h1>Do repeated drawings agree in depth?</h1>
+    <p class="answer" id="drwAnswer">Loading the pilot trials…</p>
+  </header>
+  <div class="toolbar">
+    <label class="field">Comparison method
+      <select id="modeSum" class="btn"><option value="nearest">Nearest point, no averaging</option><option value="mean">Mean Z per curve bin</option><option value="all">All Z combinations per bin</option></select>
+    </label>
+    <span class="spacer"></span>
+    <p class="sourceLine"><span id="datasetLabel">Built-in pilot (2026-09-23)</span>: <span id="trialCount">—</span> trials, <span id="sampleCount">—</span> samples. HMD columns <span id="hmdState">—</span>.</p>
+    <label class="btn small upload">Load CSV<input type="file" id="upload" accept=".csv,text/csv"></label>
+    <button id="restore" type="button" class="btn small">Use pilot data</button>
+  </div>
+  <section class="section">
+    <div class="sectionHead">
+      <h2>Every pair of trials</h2>
+      <p class="desc">Mean depth difference |Z A − Z B| between two whole 30 s trials, in cm. Darker is a larger difference. Select a cell to open that pair.</p>
+    </div>
+    <p class="overall" id="overall"></p>
+    <div id="matrix"></div>
+  </section>
+</section>
+
+<!-- ============ DRAWINGS PAIR ============ -->
+<section class="page" data-page="drw-pair" hidden>
+  <header class="pagehead">
+    <h1 id="pairHead">Pair detail</h1>
+    <p class="answer" id="pairAnswer"></p>
+  </header>
+
+  <section class="panel pairBar" aria-label="Trial pair and comparison method">
+    <div class="pick">
+      <canvas class="thumb" id="thumbA" aria-hidden="true"></canvas>
+      <div>
+        <p class="pickLabel"><span class="key a" aria-hidden="true"></span>Drawing A</p>
+        <select id="trialA" aria-label="Trial A" class="btn"></select>
+        <p class="pickNote" id="descA">—</p>
+      </div>
+    </div>
+    <button id="swap" type="button" class="icon swap" aria-label="Swap trials A and B" title="Swap A and B">⇄</button>
+    <div class="pick">
+      <canvas class="thumb" id="thumbB" aria-hidden="true"></canvas>
+      <div>
+        <p class="pickLabel"><span class="key b" aria-hidden="true"></span>Drawing B</p>
+        <select id="trialB" aria-label="Trial B" class="btn"></select>
+        <p class="pickNote" id="descB">—</p>
+      </div>
+    </div>
+    <div class="pick methodPick">
+      <div>
+        <p class="pickLabel">Comparison method</p>
+        <select id="mode" aria-label="Comparison method" class="btn"><option value="nearest">Nearest point, no averaging</option><option value="mean">Mean Z per curve bin</option><option value="all">All Z combinations per bin</option></select>
+        <p class="pickNote">cm and seconds. φ = position along the curve, θ = stimulus rotation.</p>
+      </div>
+    </div>
+    <button type="button" id="export" class="btn small exportBtn">Export pair CSV</button>
+  </section>
+
+  <nav class="modes" aria-label="What to look at">
+    <button type="button" data-mode="corr" aria-pressed="true">Along the curve</button>
+    <button type="button" data-mode="play" aria-pressed="false">Over time</button>
+    <button type="button" data-mode="cycle" aria-pressed="false">Full-turn candidates <em>experimental</em></button>
+  </nav>
+
+  <section class="grid">
+    <div class="flow">
+      <section class="panel resultPanel" aria-label="Result">
+        <div class="stats">
+          <div class="stat primaryStat">
+            <p class="statLabel" id="metricLabel">Mean |Z A − Z B|</p>
+            <p class="statValue"><strong id="metric">—</strong><span class="unit">cm</span></p>
+            <p class="statSub" id="pairName">—</p>
           </div>
-          <label class="inline" id="scatterToggle"><input type="checkbox" id="showScatter"> Show individual samples</label>
+          <div class="stat">
+            <p class="statLabel">Shared coverage</p>
+            <p class="statValue small"><strong id="coverage">—</strong></p>
+            <div class="meter" aria-hidden="true"><i id="coverageBar"></i></div>
+            <p class="statSub" id="metricNote"></p>
+          </div>
         </div>
-        <div class="lowerCanvas">
-          <canvas id="depth" tabindex="0" aria-label="Lower plot. Arrow keys move the selection."></canvas>
-          <div class="tip" id="lowerTip" role="status" aria-live="off" hidden></div>
-        </div>
-        <p class="hintLine" id="depthHelp"></p>
-      </div>
-    </section>
+        <p class="scopeLine">Whole 30 s trials. Drawing A is compared with Drawing B, not with the target.</p>
+        <p class="scopeLine caution" id="cycleScopeNote" hidden>Full-turn candidates do not change this score.</p>
 
-    <section class="panel mainPanel" id="plotPanel" aria-label="Spatial view">
-      <div class="plotHead">
-        <div>
-          <h2 class="mono" id="stageTitle">03 XY matching</h2>
-          <p class="hintLine" id="stageHelp"></p>
+        <div class="lowerPlot">
+          <div class="bandHead">
+            <div>
+              <h2 id="lowerTitle">Where along the curve A and B differ</h2>
+              <ul class="legend static" id="lowerLegend"></ul>
+            </div>
+            <label class="check" id="scatterToggle"><input type="checkbox" id="showScatter"> Show individual samples</label>
+          </div>
+          <div class="lowerCanvas">
+            <canvas id="depth" tabindex="0" aria-label="Lower plot. Arrow keys move the selection."></canvas>
+            <div class="tip" id="lowerTip" role="status" aria-live="off" hidden></div>
+          </div>
+          <p class="hintLine" id="depthHelp"></p>
         </div>
-        <div class="viewSwitch" role="group" aria-label="Plot projection">
-          <button type="button" data-view="xy">XY</button><button type="button" data-view="xz">XZ</button><button type="button" data-view="yz">YZ</button><button type="button" data-view="3d">3D</button>
-        </div>
-      </div>
-      <ol class="stages" aria-label="Analysis stages">
-        <li><button type="button" data-step="0">01 Raw drawing</button></li>
-        <li><button type="button" data-step="1">02 Remove stimulus rotation</button></li>
-        <li><button type="button" data-step="2">03 XY matching</button></li>
-        <li><button type="button" data-step="3">04 Compare Z</button></li>
-        <li><button type="button" data-step="4">05 Complete drawing</button></li>
-      </ol>
-      <div class="canvasWrap">
-        <canvas id="space" tabindex="0" aria-label="Trial trajectories. Arrow keys move the selected curve position."></canvas>
-        <ul class="legend" id="legend"></ul>
-        <p class="frameChip mono" id="frameChip"></p>
-      </div>
-      <div class="viewBar">
-        <span id="viewAngles" class="mono" title="Camera only. Changes no data.">3D view</span>
-        <span class="viewNote" id="dragHint"></span>
-        <div class="zoom"><button type="button" class="icon" id="zoomOut" aria-label="Zoom out">−</button><span id="zoomValue" class="mono">100%</span><button type="button" class="icon" id="zoomIn" aria-label="Zoom in">+</button><button type="button" class="btn small" id="resetView">Reset view</button></div>
-      </div>
-      <div class="dock" id="dockCorr">
-        <label for="phi">Curve position φ <strong id="phiValue" class="mono">0.0°</strong> <span class="dim">(index <span id="phiIndex">0</span> of 1000)</span></label>
-        <input id="phi" type="range" min="0" max="999" value="0">
-        <div class="ticks mono" aria-hidden="true"><span>0°</span><span>90°</span><span>180°</span><span>270°</span><span>360°</span></div>
-      </div>
-      <div class="dock" id="dockPlay" hidden>
-        <div class="transport">
-          <button type="button" id="playPause" class="btn primary">Play</button>
-          <button type="button" id="replayReset" class="btn">Restart</button>
-          <label class="speed">Speed<select id="playSpeed" aria-label="Playback speed" class="btn"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label>
-          <div class="frameToggle" role="group" aria-label="Playback coordinate frame"><button type="button" data-frame="0">World frame</button><button type="button" data-frame="1">De-rotated frame</button></div>
-        </div>
-        <label for="replayTime">Elapsed time <strong id="replayClock" class="mono">0.00 s</strong></label>
-        <input id="replayTime" type="range" min="0" max="30" step="0.01" value="0">
-      </div>
-    </section>
-  </div>
+      </section>
 
-  <aside class="panel inspector" aria-label="Inspector">
-    <section id="inspCorr">
-      <header class="panelHead"><h2 class="mono">Selected location</h2><span id="selectedRef" class="mono">φ 0.0°</span></header>
-      <div class="formula" id="pointFormula"></div>
-      <div id="pointDetails" class="rows"></div>
-    </section>
-    <section id="inspPlay" hidden>
-      <header class="panelHead"><h2 class="mono">Playback readout</h2></header>
-      <p class="warnLine play">Timing only. These are the latest samples at the same elapsed time, not matched points.</p>
-      <div id="replayDetails" class="rows"></div>
-      <details class="more"><summary>About playback</summary><p>Recorded timestamps, no speed normalisation. Gaps over 100 ms are not interpolated; the marker holds the last sample. +Z/−Z is world Z, not head-forward, and single-sample direction is noisy.</p></details>
-    </section>
-    <section id="inspCycle" hidden>
-      <header class="panelHead"><h2 class="mono">Complete-drawing candidates</h2></header>
-      <p class="warnLine">Experimental. Candidates are unverified review excerpts, not cleaned drawings.</p>
-      <div id="cycleDetails" class="rows"></div>
-      <details class="more">
-        <summary>How candidates are proposed and checked</summary>
-        <p>Start and end are the recorded samples nearest consecutive φ=0 crossings of the tracked curve position, in the same direction. No endpoint samples are interpolated. Z never chooses a boundary.</p>
-        <p>Provisional XY checks: no tracking reset, no recording gap over 100 ms, at least 95 of 100 curve bins sampled, backtracking at most 10% of forward travel, at least 95% of samples within 2 cm of the reference, XY endpoint gap at most 1 cm. These thresholds are not validated and may reject real drawings.</p>
-        <p>The 3D endpoint gap is reported separately and never used for selection. Returning within 1 cm is a tolerance, not proof of a full loop. The fixed φ=0 anchor can miss loops that start elsewhere.</p>
-        <p>Browser export keeps the loaded columns only. The built-in pilot has no HMD columns; the offline files in outputs/complete_drawing_review keep all original fields.</p>
-        <p id="cycleSummary"></p>
+      <section class="panel mainPanel" id="plotPanel" aria-label="Spatial view">
+        <div class="plotHead">
+          <div>
+            <h2 id="stageTitle">03 XY matching</h2>
+            <p class="hintLine" id="stageHelp"></p>
+          </div>
+          <div class="seg small viewSwitch" role="group" aria-label="Plot projection">
+            <button type="button" data-view="xy">XY</button><button type="button" data-view="xz">XZ</button><button type="button" data-view="yz">YZ</button><button type="button" data-view="3d">3D</button>
+          </div>
+        </div>
+        <ol class="stages" aria-label="Processing steps">
+          <li><button type="button" data-step="0">01 Raw drawing</button></li>
+          <li><button type="button" data-step="1">02 Remove stimulus rotation</button></li>
+          <li><button type="button" data-step="2">03 XY matching</button></li>
+          <li><button type="button" data-step="3">04 Compare Z</button></li>
+        </ol>
+        <div class="canvasWrap">
+          <canvas id="space" tabindex="0" aria-label="Trial trajectories. Arrow keys move the selected curve position."></canvas>
+          <ul class="legend" id="legend"></ul>
+          <p class="frameChip" id="frameChip"></p>
+        </div>
+        <div class="viewBar">
+          <span id="viewAngles" title="Camera only. Changes no data.">3D view</span>
+          <span class="viewNote" id="dragHint"></span>
+          <div class="zoom"><button type="button" class="icon" id="zoomOut" aria-label="Zoom out">−</button><span id="zoomValue">100%</span><button type="button" class="icon" id="zoomIn" aria-label="Zoom in">+</button><button type="button" class="btn small" id="resetView">Reset view</button></div>
+        </div>
+        <div class="dock" id="dockCorr">
+          <label for="phi">Curve position φ <strong id="phiValue">0.0°</strong> <span class="dim">(index <span id="phiIndex">0</span> of 1000)</span></label>
+          <input id="phi" type="range" min="0" max="999" value="0">
+          <div class="ticks" aria-hidden="true"><span>0°</span><span>90°</span><span>180°</span><span>270°</span><span>360°</span></div>
+        </div>
+        <div class="dock" id="dockPlay" hidden>
+          <div class="transport">
+            <button type="button" id="playPause" class="btn primary">Play</button>
+            <button type="button" id="replayReset" class="btn">Restart</button>
+            <label class="speed">Speed<select id="playSpeed" aria-label="Playback speed" class="btn"><option value="0.25">0.25×</option><option value="0.5">0.5×</option><option value="1" selected>1×</option><option value="2">2×</option></select></label>
+            <div class="frameToggle seg small" role="group" aria-label="Playback coordinate frame"><button type="button" data-frame="0">World frame</button><button type="button" data-frame="1">De-rotated frame</button></div>
+          </div>
+          <label for="replayTime">Elapsed time <strong id="replayClock">0.00 s</strong></label>
+          <input id="replayTime" type="range" min="0" max="30" step="0.01" value="0">
+        </div>
+      </section>
+    </div>
+
+    <aside class="panel inspector" aria-label="Inspector">
+      <section id="inspCorr">
+        <header class="panelHead"><h2>Selected location</h2><span id="selectedRef">φ 0.0°</span></header>
+        <div class="formula" id="pointFormula"></div>
+        <div id="pointDetails" class="rows"></div>
+      </section>
+      <section id="inspPlay" hidden>
+        <header class="panelHead"><h2>Playback readout</h2></header>
+        <p class="warnLine play">Timing only. These are the latest samples at the same elapsed time, not matched points.</p>
+        <div id="replayDetails" class="rows"></div>
+        <details class="more"><summary>About playback</summary><p>Recorded timestamps, no speed normalisation. Gaps over 100 ms are not interpolated; the marker holds the last sample. +Z/−Z is world Z, not head-forward, and single-sample direction is noisy.</p></details>
+      </section>
+      <section id="inspCycle" hidden>
+        <header class="panelHead"><h2>Full-turn candidates</h2></header>
+        <p class="warnLine">Experimental. Candidates are unverified excerpts, not cleaned drawings.</p>
+        <div id="cycleDetails" class="rows"></div>
+        <details class="more">
+          <summary>How candidates are proposed and checked</summary>
+          <p>Start and end are the recorded samples nearest consecutive φ=0 crossings of the tracked curve position, in the same direction. No endpoint samples are interpolated. Z never chooses a boundary.</p>
+          <p>Provisional XY checks: no tracking reset, no recording gap over 100 ms, at least 95 of 100 curve bins sampled, backtracking at most 10% of forward travel, at least 95% of samples within 2 cm of the reference, XY endpoint gap at most 1 cm. These thresholds are not validated and may reject real drawings.</p>
+          <p>The 3D endpoint gap is reported separately and never used for selection. Returning within 1 cm is a tolerance, not proof of a full loop. The fixed φ=0 anchor can miss loops that start elsewhere.</p>
+          <p>Browser export keeps the loaded columns only. The built-in pilot has no HMD columns; the offline files in outputs/complete_drawing_review keep all original fields.</p>
+          <p id="cycleSummary"></p>
+        </details>
+      </section>
+
+      <details class="settings">
+        <summary>Matching criteria<span class="settingsSummary" id="settingsSummary"></span></summary>
+        <label class="row">XY distance limit<select id="gate" aria-label="XY distance limit" class="btn small"><option value="0.5">0.5 cm</option><option value="1" selected>1 cm</option><option value="2">2 cm</option><option value="100000">No limit (forced)</option></select></label>
+        <label class="row switch"><span>Exclude ambiguous crossings</span><input type="checkbox" role="switch" id="ambiguity" checked></label>
+        <label class="row switch"><span>Reject different-branch matches</span><input type="checkbox" role="switch" id="branch" checked></label>
+        <div id="binControls">
+          <label class="row">Curve bins<select id="bins" aria-label="Curve bins" class="btn small"><option>50</option><option selected>100</option><option>200</option></select></label>
+          <label class="row">Minimum samples per bin<select id="min" aria-label="Minimum samples per bin" class="btn small"><option>1</option><option selected>3</option><option>5</option></select></label>
+        </div>
+        <p class="note">Ambiguous: another branch (≥84 reference indices, 30.24° of φ, away) lies within 0.2 cm of the best XY distance. Heuristics, not definitions of branch identity.</p>
       </details>
-    </section>
+    </aside>
+  </section>
+</section>
 
-    <details class="settings">
-      <summary><span class="mono">Matching criteria</span><span class="settingsSummary" id="settingsSummary"></span></summary>
-      <label class="row">XY distance limit<select id="gate" aria-label="XY distance limit" class="btn"><option value="0.5">0.5 cm</option><option value="1" selected>1 cm</option><option value="2">2 cm</option><option value="100000">No limit (forced)</option></select></label>
-      <label class="row switch"><span>Exclude ambiguous crossings</span><input type="checkbox" role="switch" id="ambiguity" checked></label>
-      <label class="row switch"><span>Reject different-branch matches</span><input type="checkbox" role="switch" id="branch" checked></label>
-      <div id="binControls">
-        <label class="row">Curve bins<select id="bins" aria-label="Curve bins" class="btn"><option>50</option><option selected>100</option><option>200</option></select></label>
-        <label class="row">Minimum samples per bin<select id="min" aria-label="Minimum samples per bin" class="btn"><option>1</option><option selected>3</option><option>5</option></select></label>
+<!-- ============ METHODS ============ -->
+<section class="page" data-page="methods" hidden>
+  <header class="pagehead">
+    <h1>How the numbers are made</h1>
+    <p class="answer">What each study measures, which data it uses, and what the numbers do not show.</p>
+  </header>
+  <div class="methods">
+    <nav class="toc" aria-label="On this page"><a href="#/methods" data-jump="m-cal">Calibration</a><a href="#/methods" data-jump="m-drw">Drawings</a><a href="#/methods" data-jump="m-geo">Trefoil geometry</a></nav>
+    <article class="prose">
+      <h2 id="m-cal">Calibration</h2>
+      <h3>Data</h3>
+      <p>RotatingTrace calibration CSVs from the summer build (23 June – 27 August 2026), cube trials only, for the 8 participants with initials. Each participant traced a static cube and a cube rotating about Z at 30°/s, 3 trials of 30 s each per session. Sessions are numbered per participant by date, then by the S number in the file name.</p>
+      <h3>Ground truth</h3>
+      <p>Wireframe cube centred at (0, 1, 0.65) m, edge 0.24 m (local 0.3 × scale 0.8), from the summer README. The 9 traced edges follow the polyline the game uses: front face 1–4, connecting edge 5, back face 6–9. The other three connecting edges are dimmed and not traced. The game does not log the cube's rotation angle, so for rotating trials the start angle is fitted per trial (2° grid, then 0.05°) to match the logged DistanceToCurve; rotation then advances at 30°/s.</p>
+      <h3>Distance</h3>
+      <p>For every recorded sample, the straight-line distance from the tracker position to the nearest point on any traced edge. This reproduces the game's own <code>DistanceToCurve</code> (FingerCursorVisualizer → CubeCalibrator.GetNearestCurveWorldPoint), which also drives the green / yellow / red cursor. The game records a sample only after the hand moves more than 1 mm, so pauses are not counted. The distance does not check edge order: being near any edge counts.</p>
+      <h3>Check against the logged value</h3>
+      <p>Across 1.13 million samples the recomputed distance differs from the logged value by a median of 0.03 mm. <span id="mExcl"></span></p>
+      <h3>Per-trial measures</h3>
+      <dl class="defs">
+        <dt>Mean distance</dt><dd>Overall accuracy. The main measure.</dd>
+        <dt>Within 2 cm</dt><dd>Share of samples at most 20 mm from an edge: the time the cursor showed green to the participant.</dd>
+        <dt>Depth (z) variability</dt><dd>Standard deviation of the z component of hand minus nearest edge point. Shows instability along the depth axis.</dd>
+        <dt>Distance by edge</dt><dd>Samples assigned to their nearest edge, then summarised per edge.</dd>
+      </dl>
+      <h3>Stability benchmark</h3>
+      <p id="mBench"></p>
+      <h3>Models</h3>
+      <p>Linear mixed-effects models (statsmodels MixedLM, REML) with a random intercept for participant and for session within participant; the edge model adds one for trial. Fixed effects: rotating vs static, log₂ session order (centred), their interaction, and trial position within the session (0–2); the edge model adds depth edge 5 and back edges 6–9 against front edges 1–4. Mean distance and depth variability are log-transformed, so effects read as % change; within 2 cm is in percentage points. With 8 participants, between-person variance is estimated imprecisely. Residual checks show a long upper tail for mean distance and depth variability.</p>
+
+      <h2 id="m-drw">Drawings</h2>
+      <ol class="steps">
+        <li><strong>Recorded position.</strong> WorldX/Y/Z from the CSV, converted once to cm. Paths follow time order and are not joined across gaps over 100 ms.</li>
+        <li><strong>Remove stimulus rotation.</strong> Subtract the stimulus centre, then undo the stimulus Z-axis rotation θ at each sample. Canonical Z = WorldZ − centre Z. This is not an HMD correction.</li>
+        <li><strong>Match using XY only.</strong> Each sample maps to the nearest of 1,000 reference locations by canonical XY. Neither Z nor time selects a match. One sample can be reused at several locations.</li>
+        <li><strong>Compare drawing depth.</strong> Compare Z between the two drawings at jointly valid locations. The reference at Z=0 marks position only; it is not a target depth.</li>
+      </ol>
+      <p><strong>Limits.</strong> Exploratory pilot, one participant. A 30 s trial is not necessarily one complete drawing; crossings and repeated visits affect XY correspondence. HMD-relative comparisons were computed offline from the full CSV and are not calculated here; they are coordinate re-expressions, not a head-fixed condition. The earlier 10.4% reduction came from θ-matching and is not a validated result.</p>
+      <p>Trials are numbered from 1 on this site. Trial 1 is TrialIndex 0 in the CSV; exported files keep the CSV index.</p>
+
+      <h2 id="m-geo">Trefoil geometry</h2>
+      <p>Defaults come from TrefoilGenerator in the supplied project. They are assumed, not confirmed against the recording build. Changing them recalculates every drawing correspondence and candidate.</p>
+      <div class="geometry">
+        <label>Centre X (m)<input type="number" id="cx" step=".01" value="0"></label>
+        <label>Centre Y (m)<input type="number" id="cy" step=".01" value="1"></label>
+        <label>Centre Z (m)<input type="number" id="cz" step=".01" value=".5"></label>
+        <label>Scale<input type="number" id="scale" step=".01" min=".001" value=".08"></label>
+        <label>R1<input type="number" id="r1" value="1" step=".1"></label>
+        <label>R2<input type="number" id="r2" value="1.5" step=".1"></label>
       </div>
-      <p class="note">Ambiguous: another branch (≥84 reference indices, 30.24° of φ, away) lies within 0.2 cm of the best XY distance. Heuristics, not definitions of branch identity.</p>
-    </details>
-  </aside>
-</section>
-
-<section class="panel band" aria-label="Whole-trial pair scores">
-  <div class="bandHead">
-    <div>
-      <h2 class="mono">All trial pairs</h2>
-      <p class="hintLine">Select a cell to compare that pair. Pairs share trials, so they are not independent.</p>
-    </div>
-    <span id="overall" class="mono overall"></span>
+      <button type="button" id="applyGeometry" class="btn primary">Apply geometry</button>
+      <p class="note">x(φ) = scale × (R1 cos φ + R2 cos 2φ), y(φ) = scale × (R1 sin φ − R2 sin 2φ). 1,000 points evenly spaced in φ.</p>
+    </article>
   </div>
-  <div id="matrix"></div>
 </section>
 
-<section class="panel band method">
-  <details>
-    <summary class="mono">How the numbers are made, and what they do not show</summary>
-    <ol class="methodSteps">
-      <li><strong>Recorded position.</strong> WorldX/Y/Z from the CSV, converted once to cm. Paths follow time order and are not joined across gaps over 100 ms.</li>
-      <li><strong>Remove stimulus rotation.</strong> Subtract the stimulus centre, then undo the stimulus Z-axis rotation θ at each sample. Canonical Z = WorldZ − centre Z. This is not an HMD correction.</li>
-      <li><strong>Match using XY only.</strong> Each sample maps to the nearest of 1,000 reference locations by canonical XY. Neither Z nor time selects a match. One sample can be reused at several locations.</li>
-      <li><strong>Compare drawing depth.</strong> Compare Z between the two drawings at jointly valid locations. The reference at Z=0 marks position only; it is not a target depth.</li>
-    </ol>
-    <p class="note"><strong>Limits.</strong> Exploratory pilot, one participant. A 30 s trial is not necessarily one complete drawing; crossings and repeated visits affect XY correspondence. HMD-relative comparisons were computed offline from the full CSV and are not calculated here; they are coordinate re-expressions, not a head-fixed condition. The earlier 10.4% reduction came from θ-matching and is not a validated result.</p>
-    <h3 class="mono geoTitle">Reference curve and stimulus geometry</h3>
-    <p class="note">Defaults come from TrefoilGenerator in the supplied project. They are assumed, not confirmed against the recording build. Changing them recalculates every correspondence and candidate.</p>
-    <div class="geometry">
-      <label>Centre X (m)<input type="number" id="cx" step=".01" value="0"></label>
-      <label>Centre Y (m)<input type="number" id="cy" step=".01" value="1"></label>
-      <label>Centre Z (m)<input type="number" id="cz" step=".01" value=".5"></label>
-      <label>Scale<input type="number" id="scale" step=".01" min=".001" value=".08"></label>
-      <label>R1<input type="number" id="r1" value="1" step=".1"></label>
-      <label>R2<input type="number" id="r2" value="1.5" step=".1"></label>
-    </div>
-    <button type="button" id="applyGeometry" class="btn primary">Apply geometry</button>
-    <p class="note">x(φ) = scale × (R1 cos φ + R2 cos 2φ), y(φ) = scale × (R1 sin φ − R2 sin 2φ). 1,000 points evenly spaced in φ.</p>
-  </details>
-</section>
-
-<footer><p>Loaded CSV files are processed in this browser only. Nothing is uploaded.</p></footer>
-</main>
-<script type="module" src="app.mjs?v=order2"></script>
+</div>
+</div>
+<div class="tip floating" id="calTip" hidden></div>
+<script type="module" src="app.mjs?v=site1"></script>
 </body>
 </html>
