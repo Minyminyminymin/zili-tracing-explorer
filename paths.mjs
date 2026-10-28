@@ -1,4 +1,4 @@
-// Paths summarised along the ground truth (used by session-worker.mjs and dashboard.mjs).
+// Mean path along the ground truth (dashboard.mjs; the cube's mean path).
 // Each sample goes to its nearest point on the ground-truth curve; the curve is cut into equal-length bins,
 // and each bin keeps the median (one trial) or mean (several trials) position of its samples.
 // 2D trefoil and ellipse are matched on X–Y only, because depth is what the participant adds.

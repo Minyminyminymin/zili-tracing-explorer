@@ -1,8 +1,6 @@
 // Background processing for one uploaded session (unified *_Trials_* + *_Samples_* CSVs).
 // Geometry and de-rotation come from session-geometry.mjs; logged TargetError is the primary error value.
-import {deriveSessionGeometry,prepareTrial,canDerotate,tracePoint,savedTargetPoint,CUBE_TRACED_EDGES,groundTruth,loadTrefoil3DReference} from './session-geometry.mjs';
-import {binnedPaths} from './paths.mjs';
-let REF3D=null;
+import {deriveSessionGeometry,prepareTrial,canDerotate,tracePoint,savedTargetPoint,CUBE_TRACED_EDGES} from './session-geometry.mjs';
 
 const num=v=>v===undefined||v===null||String(v).trim()===''?null:Number(v);
 const fin=Number.isFinite;
@@ -118,12 +116,6 @@ export function processSession(b,override=null){
   rec.p=pick.map(i=>{const q=P(i);return q?q.map(v=>Math.round(v*10000)/10):null;});
   rec.w=pick.map(i=>W(i).map(v=>Math.round(v*10000)/10));
   rec.e=pick.map(i=>errLogged[i]===null?null:Math.round(errLogged[i]*10)/10);
-  // Median path of this trial along the ground truth, from every sample (the plotted trace is downsampled).
-  if(canon&&task!=='Sphere'&&!(task==='Trefoil3D'&&m.Build&&String(m.Build).toLowerCase()!=='current')){
-   const gt=groundTruth({meta:m},geom,'canonical',0,REF3D).map(p=>({...p,points:p.points.map(q=>q.map(v=>v*1000))}));
-   if(gt.some(p=>p.kind==='ground')){const all=[];for(let i=0;i<n;i++){const q=P(i);if(q)all.push(q.map(v=>v*1000));}
-    rec.med=binnedPaths(all,gt,task,{bins:task==='Cube'?72:80,minN:3,stat:'median'}).map(sg=>sg.map(q=>q.map(v=>Math.round(v*10)/10)));}
-  }
   if(task==='Cube'&&t.cubeSpinFit)rec.spin={theta0:t.cubeSpinFit.theta0,omega:t.cubeSpinFit.omega,rmsMM:t.cubeSpinFit.rms*1000,confident:t.cubeSpinFit.confident};
   rec.angle=pick.map(i=>task==='Cube'?(t.cubeSpinFit?.angles?.[i]??0):(num(S[i].StimulusAngleDeg)??0));
   const valid=errLogged.filter(v=>v!==null);
@@ -160,7 +152,6 @@ export function processSession(b,override=null){
 
 if(typeof self!=='undefined')self.onmessage=async e=>{
  const {id}=e.data;
- if(!REF3D)REF3D=await loadTrefoil3DReference(new URL('./reference/coords_R2_1.5.csv',import.meta.url).href).catch(()=>null);
  // Files arrive as File objects and are read here, so the page never holds every file's text at once.
  const files=await Promise.all(e.data.files.map(async f=>f.text!==undefined&&typeof f.text==='string'?f:{name:f.name,text:await f.file.text()}));
  try{
