@@ -8,98 +8,69 @@
 <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%231c2226'/%3E%3Cpath d='M16 7c6 0 7 9 2 12s-11 1-9-4 9-6 12-1-1 10-5 10' fill='none' stroke='%23fff' stroke-width='2.2'/%3E%3C/svg%3E">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="style.css?v=site1">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500&family=IBM+Plex+Mono:wght@400&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css?v=site2">
 </head>
 <body data-page="overview">
 <a class="skip" href="#content">Skip to content</a>
-<div class="shell">
-
-<aside class="side" aria-label="Site">
-  <a class="brand" href="#/">
-    <svg class="mark" viewBox="0 0 32 32" aria-hidden="true"><path d="M16 5c7 0 8 10 2 13.5S5 20 7.5 14.5 18 8 21.5 13 20 25 15 25" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"/></svg>
-    <span><strong>Tracing Explorer</strong><small>Zili Lab</small></span>
-  </a>
-  <nav class="nav" aria-label="Pages">
-    <a href="#/" data-nav="overview">Overview</a>
-    <a href="#/data" data-nav="data" id="navData" hidden>Data files</a>
-    <div class="navGroup navSession" id="navSession" hidden>
-      <a href="#/" data-nav="session" id="navSessName">This session</a>
-      <p class="navQ">Uploaded files, kept in this browser.</p>
-      <ul id="navSessTasks"></ul>
-      <label class="navSel" id="navSessPick" hidden>Session <select id="sessSelect"></select></label>
-      <button type="button" class="linkBtn" id="sessClose">Close and return to the lab data</button>
-    </div>
-    <div class="navGroup">
-      <a href="#/calibration" data-nav="cal">Summer calibration</a>
-      <p class="navQ">Does traced hand position match the cube? 8 participants, June–August.</p>
-      <ul>
-        <li><a href="#/calibration" data-nav="cal-summary">Summary</a></li>
-        <li><span class="navLabel">Participants</span><div class="pidLinks" id="pidLinks"></div></li>
-      </ul>
-    </div>
-    <div class="navGroup" id="navDrw">
-      <a href="#/drawings" data-nav="drw">Drawings</a>
-      <p class="navQ">Do repeated drawings agree in depth?</p>
-      <ul>
-        <li><a href="#/drawings" data-nav="drw-summary">Summary</a></li>
-        <li><a href="#/drawings/pair/1-2" data-nav="drw-pair" id="pairNav">Pair detail</a></li>
-      </ul>
-    </div>
-    <a href="#/methods" data-nav="methods">Methods</a>
+<header class="top">
+  <a class="brand" href="#/"><small>Zili Lab @ UCLA</small><strong>Tracing Explorer</strong></a>
+  <nav class="topNav" aria-label="Sections">
+    <a class="pill" href="#/calibration" data-nav="cal">Calibration</a>
+    <a class="pill" href="#/drawings" data-nav="drw">Main Experiment</a>
+    <a class="pill quiet" href="#/data" data-nav="data">Data files</a>
+    <a class="pill quiet" href="#/methods" data-nav="methods">Methods</a>
   </nav>
-  <p class="sideNote">Loaded CSV files stay in this browser. Nothing is uploaded.</p>
-</aside>
+</header>
 
 <div class="content" id="content" tabindex="-1">
 <nav class="crumbs" id="crumbs" aria-label="Breadcrumb"></nav>
 <div id="status" role="status" aria-live="polite"></div>
 
-<!-- ============ OVERVIEW ============ -->
+
+<!-- ============ OVERVIEW (dashboard) ============ -->
 <section class="page" data-page="overview" hidden>
-  <header class="pagehead">
-    <h1>Two checks on the VR tracing data</h1>
-    <p class="answer">Calibration asks whether the recorded hand position follows the shape participants were shown. Drawings asks whether repeated drawings of the rotating trefoil agree in depth. Open a session's files to see the same checks for that session.</p>
-  </header>
-  <section class="upload" id="ovUploadBox" aria-labelledby="upHead">
-    <div class="drop" id="dropZone">
-      <h2 id="upHead">Add data files</h2>
-      <p>Drop any data CSVs or a whole folder here, or <label class="pickFiles">choose files<input type="file" id="sessFiles" accept=".csv,.txt,text/csv" multiple></label> or <label class="pickFiles">a folder<input type="file" id="sessFolder" webkitdirectory multiple></label>. The site sorts them by participant and session, counts tasks and trials, finds HMD logs, and shows which analyses each session supports. Current-build sessions (<code>_Trials_</code> + <code>_Samples_</code>) can then be opened.</p>
-      <p class="note">Files are read in this browser. Nothing is sent to a server.</p>
+  <div class="dash" id="dash">
+    <div class="dashSide">
+      <section class="card" id="cardDatasets" aria-labelledby="dsH">
+        <header class="cardHead"><h2 id="dsH">Datasets</h2>
+          <div class="cardAct">
+            <button type="button" class="iconBtn" id="dsAdd" aria-haspopup="true" aria-expanded="false" aria-label="Add a dataset">+</button>
+            <button type="button" class="iconBtn fold" aria-expanded="true" aria-controls="dsBody" aria-label="Collapse Datasets">▾</button>
+          </div>
+        </header>
+        <div class="addMenu" id="dsMenu" hidden>
+          <label class="menuItem">Add files…<input type="file" id="dsFiles" accept=".csv,.txt,text/csv" multiple></label>
+          <label class="menuItem">Add a folder…<input type="file" id="dsFolder" webkitdirectory multiple></label>
+          <button type="button" class="menuItem" id="dsBuiltin">Summer 2026 calibration (built in)</button>
+        </div>
+        <div class="cardBody" id="dsBody">
+          <ul class="dsList" id="dsList"></ul>
+          <p class="cardNote" id="dsNote">Add a folder or files, or drop them here. One dataset is shown at a time; tasks and participants fill in from what it contains.</p>
+        </div>
+      </section>
+      <section class="card" aria-labelledby="tkH">
+        <header class="cardHead"><h2 id="tkH">Tasks</h2><div class="cardAct"><button type="button" class="iconBtn fold" aria-expanded="true" aria-controls="tkBody" aria-label="Collapse Tasks">▾</button></div></header>
+        <div class="cardBody" id="tkBody"></div>
+      </section>
+      <section class="card" aria-labelledby="ppH">
+        <header class="cardHead"><h2 id="ppH">Participants</h2><div class="cardAct"><button type="button" class="iconBtn fold" aria-expanded="true" aria-controls="ppBody" aria-label="Collapse Participants">▾</button></div></header>
+        <div class="cardBody" id="ppBody"></div>
+      </section>
     </div>
-    <p class="upStatus" id="upStatus" role="status" aria-live="polite"></p>
-  </section>
-  <section class="section sessBlock" id="ovSession" hidden>
-    <div class="sectionHead"><h2 id="ovSessHead"></h2><p class="desc" id="ovSessFiles"></p></div>
-    <ul class="taskList" id="ovSessTasks"></ul>
-    <ul class="caveats" id="ovSessNotes"></ul>
-  </section>
-  <h2 class="ovLab">Lab dataset, built in</h2>
-  <div class="studies">
-    <article class="study">
-      <h2><a href="#/calibration">Calibration</a></h2>
-      <p class="studyQ">How far is the traced hand position from the cube edges?</p>
-      <p class="studyA" id="ovCalAnswer">Loading…</p>
-      <dl class="figures" id="ovCalFigs"></dl>
-      <p class="studyLinks"><a href="#/calibration">Open the summary</a><span id="ovCalPeople"></span></p>
-    </article>
-    <article class="study">
-      <h2><a href="#/drawings">Drawings</a></h2>
-      <p class="studyQ">How much do two drawings of the same curve differ in depth?</p>
-      <p class="studyA" id="ovDrwAnswer">Loading the pilot trials…</p>
-      <dl class="figures" id="ovDrwFigs"></dl>
-      <p class="studyLinks"><a href="#/drawings">Open the pair overview</a></p>
-    </article>
+    <div class="dashMain">
+      <div class="vizHead" id="vizHead"></div>
+      <div class="viz" id="viz"><p class="vizEmpty" id="vizEmpty">Add a dataset to begin.</p><div class="vizPlot" id="vizPlot"></div></div>
+    </div>
+    <section class="card compare" aria-labelledby="cmpH">
+      <header class="cardHead"><h2 id="cmpH">Comparison</h2></header>
+      <div class="cmpBody">
+        <div class="cmpList" id="cmpList" role="group" aria-label="Comparison type"></div>
+        <div class="cmpChart chart" id="cmpChart"></div>
+      </div>
+    </section>
   </div>
-  <section class="section">
-    <h2>Read these before quoting a number</h2>
-    <ul class="caveats" id="ovCaveats">
-      <li><strong>Calibration</strong> uses the summer build (23 June – 27 August 2026) and the 8 participants with initials. Files without an ID and the test file are not included.</li>
-      <li id="ovExcluded"></li>
-      <li><strong>Stability benchmarks are provisional.</strong> They come from ZZ's sessions 11–22, so a participant close to ZZ's level can move in or out of "stable" with a small change in the benchmark.</li>
-      <li><strong>Drawings</strong> is an exploratory pilot: one participant, one session (23 September 2026), 10 trials. A 30 s trial is not necessarily one complete drawing.</li>
-    </ul>
-  </section>
+  <p class="upStatus" id="upStatus" role="status" aria-live="polite"></p>
 </section>
 
 <!-- ============ CALIBRATION SUMMARY ============ -->
@@ -515,6 +486,8 @@
       <p><strong>Distance</strong> is the logged <code>TargetError</code> only. Where a cell is empty the value stays blank (null) and is left out of every mean; nothing is filled in. In the October files, rotating Trefoil 3D rows have no TargetError, so those trials show no distance. The rotating cube's angle is not saved; it is fitted per trial against the logged distance, and the Cube page reports how well the recomputed distance agrees.</p>
       <p><strong>Ellipse tilt</strong> is the arctangent of the slope of local z against local y in the disk's frame; it reproduces the game's FitSlantDeg. The tilt a circle would need is arccos(aspect ratio), from the Trials file.</p>
       <p><strong>Main trials</strong> (Trefoil2D) go through the same correspondence analysis as the pilot, using the recovered main-trefoil centre and scale.</p>
+      <p><strong>Summer-build files</strong> (<code>RotatingTrace_Calib_…</code> and <code>RotatingTrace_…</code>) are processed with the summer geometry from the summer README: centre (0, 1, 0.65) m, cube edge 240 mm, 2D trefoil scale 0.08. A cube trial is left out when more than 1% of its samples differ from the logged DistanceToCurve by over 1 mm, or when the rotating cube's angle cannot be fitted confidently; files recorded with a different geometry (for example early June) drop out this way. Summer 3D trefoil and ellipse files are listed but not analysed.</p>
+      <p><strong>Builds are kept apart.</strong> Summer and current-build sessions differ in stimulus size, placement and logging, so files from different builds always become separate datasets, and only one dataset is shown at a time.</p>
 
       <h2 id="m-drw">Drawings</h2>
       <ol class="steps">
@@ -543,8 +516,8 @@
 </section>
 
 </div>
-</div>
 <div class="tip floating" id="calTip" hidden></div>
-<script type="module" src="app.mjs?v=site1"></script>
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js" defer></script>
+<script type="module" src="app.mjs?v=site2"></script>
 </body>
 </html>

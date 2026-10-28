@@ -4,7 +4,6 @@ const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&g
 const fmtDate=d=>d?`${+d.slice(6,8)} ${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][+d.slice(4,6)-1]} ${d.slice(0,4)}`:'—';
 const fmtTime=t=>t?`${t.slice(0,2)}:${t.slice(2,4)}`:'';
 const mb=b=>b>=1e6?`${(b/1e6).toFixed(1)} MB`:`${Math.max(1,Math.round(b/1e3))} kB`;
-const LAB=new Set(['AA','AZ','EC','EM','IL','JP','MM','ZZ']);// built-in summer calibration participants
 const TASKS=[['Cube','Cube'],['Trefoil3D','Trefoil 3D'],['Sphere','Sphere'],['Ellipse','Ellipse'],['Trefoil2D','Main trefoil']];
 const LEGACY_TYPE={cube_static:['Cube','Static'],cube_rotating:['Cube','Rotating'],trefoil3d_static:['Trefoil3D','Static'],trefoil3d_rotating:['Trefoil3D','Rotating'],trefoil2d_static:['Trefoil2DCal','Static']};
 
@@ -93,7 +92,7 @@ function analyses(s){
  // accuracy tasks in the current build need Trials (geometry) + Samples (TargetError)
  const acc=(key,task)=>{
   if(!n(task)){r[key]={st:'none'};return;}
-  if(!cur){r[key]=task==='Cube'&&LAB.has(s.pid)&&s.date>='20260623'&&s.date<='20260827'?{st:'yes',why:'Summer format. Included in the Summer calibration pages.',where:`#/calibration/${s.pid}`}:{st:'no',why:'Summer per-task format; only cube files from the 8 lab participants (23 Jun – 27 Aug) are analysed on this site.'};return;}
+  if(!cur){r[key]=task==='Cube'?{st:'yes',why:'Summer build. Processed with the summer geometry (centre z 0.65 m, edge 240 mm); trials whose distance disagrees with the logged DistanceToCurve are left out.'}:{st:'no',why:'Summer build; only the cube and the main trials are analysed for summer files.'};return;}
   if(!tr||!sm){r[key]={st:'no',why:`Needs both the Trials and the Samples file; ${tr?'Samples':'Trials'} is missing.`};return;}
   if(!sm.summary?.tasks?.[task]){r[key]={st:'no',why:`Trials lists ${n(task)} trials, but the Samples file has no samples for them.`};return;}
   const e=empty(task)||[],full=e.filter(x=>x.e===x.n),some=e.filter(x=>x.e>0&&x.e<x.n);
@@ -114,11 +113,11 @@ function analyses(s){
  if(!m)r.drawings={st:'none'};
  else if(m<2)r.drawings={st:'no',why:'Needs at least two main trials.'};
  else if(cur){const k=sm?.summary?.tasks?.Trefoil2D?.trials||0;r.drawings=!(tr&&sm)?{st:'no',why:'Needs both the Trials and the Samples file.'}:k<2?{st:'no',why:`Trials lists ${m} main trials, but the Samples file has ${k===0?'none':'only one'}.`}:{st:'yes',why:`${k} trials, ${k*(k-1)/2} pairs.`};}
- else r.drawings={st:'part',why:'Summer main-trial file. The pair analysis runs on it, but the trefoil centre and scale must be set by hand under Methods.'};
+ else r.drawings={st:'yes',why:`Summer build: ${m} trials with the summer geometry (centre z 0.65 m, scale 0.08).`};
  // HMD
  if(s.hmd.length)r.hmd={st:'part',why:`HMD data present (${s.hmd.map(h=>`${h.file.name}, ${h.how}`).join('; ')}). Not analysed on this site yet.`};
  else r.hmd={st:'no',why:'No HMD file for this session.'};
- r.open=cur&&tr&&sm&&sm.rows>0;
+ r.open=(cur&&tr&&sm&&sm.rows>0)||(!cur&&s.files.some(f=>f.kind==='calibLegacy'||f.kind==='mainLegacy'));
  return r;
 }
 
@@ -162,7 +161,7 @@ export function render(){
 }
 async function openSession(key,btn){
  const s=inv.sessions.find(x=>x.key===key);if(!s)return;
- const files=s.files.filter(f=>['trials','samples','info'].includes(f.kind)).map(f=>fileByName.get(f.name)).filter(Boolean);
+ const files=s.files.filter(f=>['trials','samples','info','calibLegacy','mainLegacy'].includes(f.kind)).map(f=>fileByName.get(f.name)).filter(Boolean);
  btn.disabled=true;btn.textContent='Opening…';
  try{await hooks.onOpen?.(files);}finally{btn.disabled=false;btn.textContent='Open';}
 }

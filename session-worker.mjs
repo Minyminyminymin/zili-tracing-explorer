@@ -8,6 +8,9 @@ const MAXPTS=900;
 const ORDER=['Cube','Trefoil3D','Sphere','Ellipse','Trefoil2D'];
 
 export function parseCSV(text){
+ // Fast path: the exports never quote fields, so plain splitting is exact.
+ if(!text.includes('"')){const lines=text.split(/\r?\n/).filter(l=>l.trim());if(!lines.length)return [];const h=lines[0].replace(/^\uFEFF/,'').split(',').map(x=>x.trim());
+  const out=new Array(lines.length-1);for(let i=1;i<lines.length;i++){const f=lines[i].split(','),o={};for(let k=0;k<h.length;k++)o[h[k]]=f[k]??'';out[i-1]=o;}return out;}
  const rows=[];let row=[],cell='',q=false;
  for(let i=0;i<text.length;i++){const ch=text[i];
   if(ch==='"'){if(q&&text[i+1]==='"'){cell+='"';i++;}else q=!q;}
@@ -25,9 +28,40 @@ function classify(name,h){
  if(h.includes('TrialID')&&h.includes('SampleIndex')&&h.includes('Task'))return 'samples';
  if(h.includes('ParticipantID')&&h.includes('SessionNumber'))return 'info';
  if(h.includes('TrialID')&&h.includes('HMDFrameIndex'))return 'hmd';
+ // Summer build: per-task exports. A current-build session also writes these as copies; those are skipped.
+ if(/^[A-Za-z][A-Za-z.]*_S\d+_/.test(name))return null;
+ if(h.includes('TrialType')&&h.includes('DistanceToCurve'))return 'calibLegacy';
+ if(h.includes('TrialIndex')&&h.includes('TrialInBlock')&&h.includes('TrefoilAngleDeg'))return 'mainLegacy';
  return null;
 }
-const keyOf=name=>name.replace(/_(Trials|Samples|HMD|SessionInfo)_.*$/i,'').replace(/\.csv$/i,'');
+// RotatingTrace_Calib_ZZ_20260815_S1 and RotatingTrace_ZZ_20260815_S1 are the same summer session.
+export const keyOf=name=>{const b=name.replace(/\.csv$/i,'');const m=b.match(/^RotatingTrace(?:_Calib)?_+(.+)$/);return m?'summer_'+m[1]:b.replace(/_(Trials|Samples|HMD|SessionInfo)_.*$/i,'');};
+
+// Summer build geometry, from README_Summer_RotatingTrace (Aug 24 version): cube and trefoils centred at (0, 1, 0.65),
+// cube edge 0.3 × 0.8 = 0.24 m, 2D trefoil scale 0.08. Each cube trial is checked against the logged DistanceToCurve.
+const SUMMER_GEOM={calibCenter:[0,1,.65],calibScale:null,calibFactor:null,cubeWorldEdge:.24,ellipseCenter:null,mainCenter:[0,1,.65],mainScale:.08,mainFactor:null,source:'summer README'};
+function legacyBundle(b){
+ const trials=[],samples=[];
+ if(b.calibLegacy){
+  const by=new Map();for(const r of b.calibLegacy){if(r.TrialType!=='cube_static'&&r.TrialType!=='cube_rotating')continue;const k=r.TrialType+'|'+r.TrialIndex;if(!by.has(k))by.set(k,[]);by.get(k).push(r);}
+  for(const [k,rows] of by){const [ty,ti]=k.split('|'),rot=ty==='cube_rotating',id=`${rot?'CUBE_ROT':'CUBE_STATIC'}_${String(+ti+1).padStart(2,'0')}`,t0=num(rows[0].TimeStamp)??0;
+   trials.push({TrialID:id,Task:'Cube',Condition:rot?'Rotating':'Static',TrialIndex:String(+ti+1),RotationSpeed:rot?'30':'0',ActualDuration:rows[0].TrialDuration});
+   rows.forEach((r,i)=>samples.push({TrialID:id,Task:'Cube',SampleIndex:r.PointIndex??String(i),TimeSec:String((num(r.TimeStamp)??0)-t0),WorldX:r.WorldX,WorldY:r.WorldY,WorldZ:r.WorldZ,TargetError:r.DistanceToCurve}));}
+ }
+ if(b.mainLegacy){
+  const by=new Map();for(const r of b.mainLegacy){if(!by.has(r.TrialIndex))by.set(r.TrialIndex,[]);by.get(r.TrialIndex).push(r);}
+  for(const [ti,rows] of by){const id=`MAIN_${String(+ti+1).padStart(3,'0')}`,t0=num(rows[0].TimeStamp)??0;
+   trials.push({TrialID:id,Task:'Trefoil2D',Condition:'Rotating',TrialIndex:String(+ti+1),Block:rows[0].Block,R1:rows[0].R1,R2:rows[0].R2,RotationSpeed:rows[0].RotationSpeed,ActualDuration:rows[0].TrialDuration});
+   rows.forEach((r,i)=>samples.push({TrialID:id,Task:'Trefoil2D',SampleIndex:r.PointIndex??String(i),TimeSec:String((num(r.TimeStamp)??0)-t0),WorldX:r.WorldX,WorldY:r.WorldY,WorldZ:r.WorldZ,StimulusAngleDeg:r.TrefoilAngleDeg}));}
+ }
+ return {...b,trials,samples};
+}
+function summerSession(b){
+ const s=processSession(legacyBundle(b),SUMMER_GEOM),k=b.key.replace(/^summer_/,''),m=k.match(/^(?:([A-Za-z][A-Za-z.]*)_)?(\d{8})_?(.*)$/);
+ s.build='summer';s.participant=m?.[1]?m[1].toUpperCase():'No ID';s.session=null;s.label=m?.[3]||'';s.date=m?.[2]||null;
+ s.notes.unshift('Summer build: geometry from the summer README; each cube trial is checked against the logged DistanceToCurve.');
+ return s;
+}
 
 const quant=(a,p)=>{if(!a.length)return null;const b=[...a].sort((x,y)=>x-y),i=(b.length-1)*p,f=Math.floor(i);return b[f+1]===undefined?b[f]:b[f]+(i-f)*(b[f+1]-b[f]);};
 const mean=a=>a.length?a.reduce((s,v)=>s+v,0)/a.length:null;
@@ -51,12 +85,13 @@ function ellipseShape(local){
  return {aspect:Math.sqrt(Math.max(0,l2)/l1),slopeZY:slope,slantDeg:Math.atan(Math.abs(slope))*180/Math.PI,r2,depthMM:(quant(P.map(p=>p[2]),.95)-quant(P.map(p=>p[2]),.05))*1000};
 }
 
-export function processSession(b){
+export function processSession(b,override=null){
  const groups=new Map();
  for(const r of b.samples){if(!groups.has(r.TrialID))groups.set(r.TrialID,[]);groups.get(r.TrialID).push(r);}
- const joined=b.trials.map(t=>({meta:t,samples:(groups.get(t.TrialID)||[]).sort((x,y)=>(num(x.TimeSec)??0)-(num(y.TimeSec)??0)),hmd:[]})).filter(t=>t.samples.length);
- const geom=deriveSessionGeometry(joined),notes=[];
- if(!geom.calibCenter)notes.push('No sphere trial with a saved centre, so Cube, Trefoil 3D and Sphere can only be shown in world coordinates.');
+ const byTime=rows=>rows.map(r=>[num(r.TimeSec)??0,r]).sort((x,y)=>x[0]-y[0]).map(x=>x[1]);
+ const joined=b.trials.map(t=>({meta:t,samples:byTime(groups.get(t.TrialID)||[]),hmd:[]})).filter(t=>t.samples.length);
+ const geom=override?{...override}:deriveSessionGeometry(joined),notes=[];
+ if(!geom.calibCenter&&joined.some(t=>['Cube','Trefoil3D','Sphere'].includes(t.meta.Task)))notes.push('No sphere trial with a saved centre, so Cube, Trefoil 3D and Sphere can only be shown in world coordinates.');
  if(!Number.isFinite(geom.cubeWorldEdge)&&joined.some(t=>t.meta.Task==='Cube'))notes.push('Cube size could not be derived (needs static Trefoil 3D targets), so the cube outline is not drawn.');
  for(const t of joined)prepareTrial(t,geom);
  const out=[],rows2D=[];
@@ -117,9 +152,11 @@ if(typeof self!=='undefined')self.onmessage=async e=>{
    const k=keyOf(f.name);if(!bundles.has(k))bundles.set(k,{key:k,names:{}});
    const b=bundles.get(k);b[kind]=parseCSV(f.text);b.names[kind]=f.name;
   }
-  const complete=[...bundles.values()].filter(b=>b.trials&&b.samples),missing=[...bundles.values()].filter(b=>!(b.trials&&b.samples)).map(b=>`${b.key}: add the matching ${b.trials?'Samples':'Trials'} file`);
-  if(!complete.length)throw Error(missing.length?missing.join('. ')+'.':'No Trials or Samples file was recognised. Choose the *_Trials_*.csv and *_Samples_*.csv files from one session.');
-  const sessions=[];for(const b of complete)sessions.push(processSession(b));
+  const all=[...bundles.values()],legacy=all.filter(b=>b.calibLegacy||b.mainLegacy),cur=all.filter(b=>!(b.calibLegacy||b.mainLegacy));
+  const complete=cur.filter(b=>b.trials&&b.samples),missing=cur.filter(b=>!(b.trials&&b.samples)&&(b.trials||b.samples)).map(b=>`${b.key}: add the matching ${b.trials?'Samples':'Trials'} file`);
+  if(!complete.length&&!legacy.length)throw Error(missing.length?missing.join('. ')+'.':'No Trials or Samples file was recognised. Choose the *_Trials_*.csv and *_Samples_*.csv files from one session.');
+  const sessions=[];for(const b of complete){const x=processSession(b);x.build='current';sessions.push(x);}
+  for(const b of legacy)sessions.push(summerSession(b));
   self.postMessage({id,sessions,skipped,missing});
  }catch(err){self.postMessage({id,error:err.message});}
 };

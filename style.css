@@ -8,16 +8,16 @@
   --t1:#2a78d6;--t2:#eb6834;--t3:#1baf7a;
   --d0:#c3ccd0;--d1:#b42318;
   --better:#2563c9;--worse:#c23b22;--ns:#9aa4a8;--band:#e8f2ed;--bandLine:#3b8a5f;
-  --sans:"IBM Plex Sans",system-ui,-apple-system,"Segoe UI",sans-serif;
+  --sans:"Inter",system-ui,-apple-system,"Segoe UI",sans-serif;
   --mono:"IBM Plex Mono",ui-monospace,Menlo,monospace;
   --r:10px;--r-ctl:7px;--mode:var(--ink);
 }
 *{box-sizing:border-box}
 html{-webkit-text-size-adjust:100%}
-body{margin:0;background:var(--bg);color:var(--text);font:15px/1.55 var(--sans);font-variant-numeric:tabular-nums}
+body{margin:0;background:var(--bg);color:var(--text);font:400 14px/1.55 var(--sans);font-variant-numeric:tabular-nums;-webkit-font-smoothing:antialiased}
 button,input,select{font:inherit;color:inherit}
 p{margin:0}
-h1,h2,h3{margin:0;color:var(--ink);font-weight:600}
+h1,h2,h3{margin:0;color:var(--ink);font-weight:500}
 a{color:var(--ink);text-decoration-color:var(--rule-strong);text-underline-offset:3px}
 a:hover{text-decoration-color:var(--ink)}
 code{font-family:var(--mono);font-size:.86em;background:var(--soft);padding:1px 5px;border-radius:4px}
@@ -63,7 +63,7 @@ code{font-family:var(--mono);font-size:.86em;background:var(--soft);padding:1px 
 /* ---------- page header: the question, then the answer ---------- */
 .page{max-width:1240px}
 .pagehead{padding:26px 0 26px;border-bottom:1px solid var(--rule);margin-bottom:8px}
-.pagehead h1{font-size:2rem;line-height:1.18;letter-spacing:-.015em;max-width:30ch}
+.pagehead h1{font-size:1.9rem;font-weight:400;line-height:1.2;letter-spacing:-.02em;max-width:30ch}
 .pagehead .answer{margin-top:14px;font-size:1.14rem;line-height:1.55;color:var(--ink);max-width:68ch}
 .section{padding:30px 0;border-top:1px solid var(--rule)}
 .pagehead+.section,.toolbar+.section{border-top:0}
@@ -507,3 +507,121 @@ table.matrix td.st{text-align:center;font-size:.84rem;font-weight:500;border-lef
 table.matrix thead th:first-child,table.matrix tbody th{position:sticky;left:0;background:var(--surface);z-index:1}
 .reasons{margin-top:16px}
 .fname{font-weight:400;font-family:var(--mono);font-size:.8rem;white-space:normal;word-break:break-all;max-width:360px}
+
+
+/* ---------- top bar (replaces the sidebar) ---------- */
+.top{display:flex;align-items:flex-end;justify-content:space-between;gap:16px;padding:22px 32px 14px;flex-wrap:wrap}
+.top .brand{display:flex;flex-direction:column;gap:2px;text-decoration:none;color:var(--ink)}
+.top .brand small{font-size:.72rem;font-weight:400;color:var(--muted);letter-spacing:.01em}
+.top .brand strong{font-size:1.75rem;font-weight:300;letter-spacing:-.02em;line-height:1.1}
+.topNav{display:flex;gap:8px;flex-wrap:wrap}
+.pill{display:inline-flex;align-items:center;min-height:30px;padding:4px 12px;border-radius:6px;background:var(--surface);box-shadow:0 1px 3px rgba(20,30,35,.14);font-size:.8rem;font-weight:400;color:var(--ink);text-decoration:none}
+.pill:hover{box-shadow:0 1px 4px rgba(20,30,35,.24)}
+.pill.quiet{box-shadow:none;color:var(--muted)}
+.pill.on{color:var(--a);box-shadow:0 0 0 1px var(--a)}
+.content{max-width:1360px;margin:0 auto;padding:0 32px 60px}
+body[data-page=overview] .crumbs{display:none}
+
+/* ---------- dashboard ---------- */
+.dash{display:grid;grid-template-columns:250px minmax(0,1fr);grid-template-areas:"side main" "label cmp";gap:22px 30px;padding-top:18px}
+.dashSide{grid-area:side;display:flex;flex-direction:column;gap:20px}
+.dashMain{grid-area:main;min-width:0;display:flex;flex-direction:column}
+.dashLabel{grid-area:label;align-self:end;font-size:1.05rem;font-weight:500;margin:0 0 6px}
+.compare{grid-area:cmp}
+.card{background:var(--surface);border-radius:4px;box-shadow:0 1px 4px rgba(20,30,35,.16);padding:12px 14px 14px}
+.card.over{box-shadow:0 0 0 2px var(--a)}
+.cardHead{display:flex;align-items:center;justify-content:space-between;gap:8px;padding-bottom:6px;margin-bottom:8px;border-bottom:1px solid var(--rule)}
+.cardHead h2{font-size:.86rem;font-weight:500}
+.cardAct{display:flex;gap:2px;position:relative}
+.iconBtn{border:0;background:none;width:24px;height:24px;border-radius:4px;font-size:.9rem;line-height:1;color:var(--ink);cursor:pointer;display:grid;place-items:center}
+.iconBtn:hover{background:var(--soft)}
+.iconBtn.fold.closed{transform:rotate(-90deg)}
+.cardNote{font-size:.76rem;color:var(--muted);line-height:1.45}
+.addMenu{position:absolute;z-index:6;margin-top:-4px;width:240px;background:var(--surface);border-radius:6px;box-shadow:0 6px 20px rgba(20,30,35,.18);padding:6px;display:flex;flex-direction:column}
+#cardDatasets{position:relative}
+#cardDatasets .addMenu{right:10px;top:40px}
+.menuItem{position:relative;display:block;text-align:left;border:0;background:none;padding:7px 10px;border-radius:4px;font-size:.8rem;color:var(--ink);cursor:pointer}
+.menuItem:hover,.menuItem:focus-within{background:var(--soft)}
+.menuItem input{position:absolute;inset:0;opacity:0;cursor:pointer;width:100%}
+.dsList{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.dsList li{display:grid;gap:2px}
+.dsList small{font-size:.72rem;color:var(--muted);padding-left:22px;line-height:1.35}
+.ds{display:flex;align-items:center;gap:7px;border:0;background:none;padding:0;font-size:.8rem;color:var(--faint);cursor:pointer;text-align:left}
+.ds svg{width:14px;height:14px;fill:currentColor;flex:none}
+.ds.on{color:var(--ink)}
+.grp+.grp{margin-top:10px}
+.grpName{font-size:.76rem;color:var(--text);margin:0 0 4px}
+.chips{display:flex;flex-wrap:wrap;gap:2px 8px}
+.chip{border:0;background:none;padding:2px 0;font-size:.74rem;font-weight:400;color:var(--ink);cursor:pointer}
+.chip:disabled{color:#b7bfc2;cursor:default}
+.chip.sel{color:var(--a);font-weight:500}
+.chip:not(:disabled):hover{color:var(--a)}
+.chip.mini{font-size:.74rem;padding:0 3px}
+.chipAct{margin-top:6px;display:flex;gap:10px}
+.chipAct .linkBtn{padding:0;font-size:.72rem}
+.vizHead{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 16px;min-height:22px;font-size:.8rem;color:var(--muted)}
+.vizHead strong{font-weight:500;color:var(--ink);font-size:.9rem}
+.sessPick{display:flex;flex-wrap:wrap;gap:0 4px;align-items:baseline}
+.viz{position:relative;flex:1;min-height:520px}
+.vizPlot{position:absolute;inset:0}
+.vizEmpty{position:absolute;inset:0;display:grid;place-items:center;font-size:1.6rem;font-weight:300;color:#9aa4a8;text-align:center;padding:20px}
+.cmpBody{display:grid;grid-template-columns:220px minmax(0,1fr);gap:18px;align-items:start}
+.cmpList{display:flex;flex-direction:column}
+.cmpRow{display:flex;flex-direction:column;align-items:flex-start;gap:2px;border:0;border-bottom:1px solid var(--rule);background:none;padding:12px 2px;font-size:.8rem;color:var(--ink);text-align:left;cursor:pointer}
+.cmpRow:last-child{border-bottom:0}
+.cmpRow.sel>span{color:var(--a);font-weight:500}
+.cmpRow:disabled{color:#a9b1b4;cursor:default}
+.cmpRow small{font-size:.7rem;color:var(--muted);font-weight:400}
+.chipLine{display:flex;flex-wrap:wrap;gap:0 7px}
+.chipLine i{font-style:normal;color:#b7bfc2}
+.chipLine i.on{color:var(--a)}
+.cmpChart{min-height:200px}
+.cmpEmpty{font-size:.85rem;color:var(--muted);padding:20px 0}
+.cmpChart .note{margin-top:4px;font-size:.74rem}
+.upStatus{margin-top:12px;font-size:.84rem}
+@media (max-width:1000px){
+
+  .dashSide{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+  .viz{min-height:420px}
+}
+@media (max-width:640px){
+  .top{padding:16px 16px 10px}.content{padding:0 16px 40px}
+  .cmpBody{grid-template-columns:1fr}
+  .viz{min-height:360px}
+}
+.top .brand{align-items:flex-start}
+body[data-page=overview] #status{display:none}
+.vizHead .warn{color:var(--caution)}
+
+
+/* ---------- one-screen overview ---------- */
+.top{max-width:1360px;margin:0 auto;box-sizing:border-box}
+.dash{grid-template-columns:250px minmax(0,1fr);grid-template-areas:"side main" "side cmp";grid-template-rows:minmax(0,1fr) minmax(190px,32%);gap:18px 30px;padding-top:6px}
+@media (min-width:1001px){
+  body[data-page=overview]{height:100vh;overflow:hidden;display:flex;flex-direction:column}
+  body[data-page=overview] .top{width:100%;flex:none}
+  body[data-page=overview] .content{flex:1;min-height:0;width:100%;padding-bottom:22px;display:flex;flex-direction:column}
+  body[data-page=overview] .page[data-page=overview]{flex:1;min-height:0;display:flex;flex-direction:column}
+  body[data-page=overview] .dash{flex:1;min-height:0}
+  .dashSide{min-height:0;overflow-y:auto;padding:2px 4px 4px 2px;margin:-2px -4px -4px -2px}
+  .viz{min-height:0}
+  .compare{min-height:0;display:flex;flex-direction:column;overflow:hidden}
+  .compare .cmpBody{flex:1;min-height:0}
+  .cmpList,.cmpChart{max-height:100%;overflow:auto}
+  .cmpChart{min-height:0;height:100%}
+}
+.upStatus{position:fixed;left:24px;bottom:14px;z-index:8;margin:0;padding:6px 12px;background:var(--surface);border-radius:6px;box-shadow:0 2px 10px rgba(20,30,35,.16);max-width:min(560px,calc(100vw - 48px))}
+.upStatus:empty{display:none}
+@media (max-width:1000px){
+  .dash{grid-template-columns:1fr;grid-template-areas:"side" "main" "cmp";grid-template-rows:auto auto auto}
+  .viz{min-height:420px}
+}
+.page[data-page=overview]{max-width:none}
+
+/* ---------- one outer margin on every side (the comparison block's bottom margin) ---------- */
+:root{--m:24px}
+.top{max-width:none;margin:0;padding:var(--m) var(--m) 14px}
+.content{max-width:none;margin:0;padding:0 var(--m) var(--m)}
+body[data-page=overview] .content{padding-bottom:var(--m)}
+.dash{padding-top:0}
+@media (max-width:640px){:root{--m:16px}}

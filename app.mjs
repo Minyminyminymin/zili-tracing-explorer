@@ -1,8 +1,9 @@
-// Site shell: hash router, navigation, breadcrumbs and the overview page.
+// Site shell: hash router, top navigation and breadcrumbs. The overview is the dashboard (dashboard.mjs).
 import * as drw from './drawings.mjs';
 import * as cal from './calibration.mjs';
 import * as ses from './session.mjs';
 import * as inv from './inventory.mjs';
+import * as dash from './dashboard.mjs';
 const $=id=>document.getElementById(id);
 const fmt=(x,n=1)=>x===null||x===undefined||!Number.isFinite(x)?'—':x.toFixed(n);
 const COND={static:'Static',rotating:'Rotating'};
@@ -46,9 +47,7 @@ function crumbs(r){
  $('crumbs').innerHTML=parts.join('<span class="sep" aria-hidden="true">/</span>');
 }
 function navState(r){
- const sk=r.page==='s-task'?'s-'+ses.TASKS[r.task].slug:r.page==='s-ellipse'?'s-ellipse':r.page==='s-trial'?'s-'+(ses.TASKS[ses.current()?.trials.find(x=>x.id===r.id)?.task]?.slug||''):null;
- document.querySelectorAll('[data-nav]').forEach(a=>{const k=a.dataset.nav,on=k===r.page||k===sk||(k==='cal'&&r.page.startsWith('cal'))||(k==='drw'&&r.page.startsWith('drw'));a.classList.toggle('on',on);if(k===r.page||k===sk)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
- document.querySelectorAll('#pidLinks a').forEach(a=>a.classList.toggle('on',a.dataset.pid===r.pid));
+ document.querySelectorAll('[data-nav]').forEach(a=>{const k=a.dataset.nav,on=(k==='cal'&&r.page.startsWith('cal'))||(k==='drw'&&r.page.startsWith('drw'))||k===r.page;a.classList.toggle('on',on);if(on)a.setAttribute('aria-current','page');else a.removeAttribute('aria-current');});
 }
 async function route(){
  const r=parse(),prev=page;
@@ -60,7 +59,7 @@ async function route(){
  crumbs(r);navState(r);
  if(prev!==page){window.scrollTo(0,0);}
  try{
-  if(page==='overview')overview();
+  if(page==='overview')dash.render();
   else if(page==='cal-summary')await cal.renderSummary();
   else if(page==='cal-participant')await cal.renderParticipant(r.pid,r.cond);
   else if(page==='cal-session')await cal.renderSession(r.pid,r.s,r.cond,r.trial);
@@ -80,24 +79,12 @@ drw.hooks.onPair=(a,b,view)=>{
  if(page!=='drw-pair'||a===undefined)return;
  const h=`#/drawings/pair/${a+1}-${b+1}${view&&view!=='corr'?'?view='+view:''}`;
  if(location.hash!==h)history.replaceState(null,'',h);
- $('pairNav').href=h;$('pairHead').textContent=`Trial ${a+1} vs trial ${b+1}`;
+ $('pairHead').textContent=`Trial ${a+1} vs trial ${b+1}`;
  $('pairAnswer').textContent=`Mean depth difference ${$('metric').textContent} cm, over ${$('coverage').textContent} of the curve where both drawings have a valid match. ${view==='play'?'Over time replays both trials on their own clocks; it does not change the score.':view==='cycle'?'Full-turn candidates are experimental and do not change the score.':'Select a spot on the curve to see the two samples behind it.'}`;
  crumbs({page:'drw-pair',a,b});
 };
-drw.hooks.onData=()=>{if(page==='overview')overview();};
 
-async function overview(){
- ses.overviewBlock();
- const S=await cal.loadSummary(),o=S.overall;
- $('ovCalAnswer').textContent=`About ${fmt(o.static.mean_mm,0)} mm from the edges for the static cube and ${fmt(o.rotating.mean_mm,0)} mm for the rotating cube. Error falls with practice, and depth is the least stable axis.`;
- const stable=c=>S.participants.filter(p=>p.cond[c].onset).length;
- $('ovCalFigs').innerHTML=`<div><dt>Participants</dt><dd>${o.participants}</dd></div><div><dt>Sessions</dt><dd>${o.sessions}</dd></div><div><dt>Trials kept</dt><dd>${o.trials}</dd></div><div><dt>Stable, static / rotating</dt><dd>${stable('static')} / ${stable('rotating')}</dd></div>`;
- $('ovCalPeople').innerHTML=' or a participant: '+S.participants.map(p=>`<a href="#/calibration/${p.id}">${p.id}</a>`).join(' ');
- $('ovExcluded').innerHTML=`<strong>${S.excluded.length} rotating trials are excluded</strong> because the recomputed cube distance disagreed with the logged value: ${S.excluded.map(e=>`${e.pid} session ${e.s} trial ${e.i}`).join(', ')}.`;
- const d=drw.summary();
- if(d){$('ovDrwAnswer').textContent=`Two whole trials differ in depth by ${fmt(d.mean,2)} cm on average, between ${fmt(d.min,1)} and ${fmt(d.max,1)} cm depending on the pair.`;
-  $('ovDrwFigs').innerHTML=`<div><dt>Participants</dt><dd>1</dd></div><div><dt>Trials</dt><dd>${d.trials}</dd></div><div><dt>Pairs</dt><dd>${d.pairs}</dd></div><div><dt>Samples</dt><dd>${d.samples.toLocaleString('en-US')}</dd></div>`;}
-}
+
 async function methods(){
  const S=await cal.loadSummary(),th=S.thresholds;
  $('mExcl').textContent=`${S.excluded.length} rotating trials had more than 1% of samples off by over 1 mm, inflating their mean by 3–8 mm; they are excluded everywhere: ${S.excluded.map(e=>`${e.pid} s${e.s} trial ${e.i}`).join(', ')}.`;
@@ -107,54 +94,14 @@ async function methods(){
 }
 document.querySelectorAll('[data-jump]').forEach(a=>a.onclick=e=>{e.preventDefault();$(a.dataset.jump).scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'});});
 
-let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{if(page.startsWith('cal'))cal.redraw(page);else if(page.startsWith('s-'))ses.redraw(page);else if(page.startsWith('drw'))drw.redraw();},150);});
+let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{if(page==='overview')dash.redraw();else if(page.startsWith('cal'))cal.redraw(page);else if(page.startsWith('s-'))ses.redraw(page);else if(page.startsWith('drw'))drw.redraw();},150);});
 
-cal.loadSummary().then(S=>{$('pidLinks').innerHTML=S.participants.map(p=>`<a href="#/calibration/${p.id}" data-pid="${p.id}">${p.id}</a>`).join('');navState(parse());}).catch(()=>{});
-/* ---------- uploaded sessions ---------- */
+/* ---------- uploaded data ---------- */
 function setStatus(msg,error=false){$('status').textContent=msg;$('status').className=msg?'visible'+(error?' error':''):'';}
-function sessionNav(){
- const s=ses.current(),box=$('navSession');box.hidden=!s;
- const hasDrw=!!s?.drawings;$('navDrw').hidden=hasDrw;
- if(!s)return;
- $('navSessName').textContent=ses.label(s);
- $('navSessTasks').innerHTML=ses.tasksIn(s).map(t=>t==='Trefoil2D'?`<li><a href="#/drawings" data-nav="drw-summary">Drawings, main trials</a></li><li><a href="#/drawings/pair/1-2" data-nav="drw-pair">Pair detail</a></li>`:`<li><a href="#/s/${ses.TASKS[t].slug}" data-nav="s-${ses.TASKS[t].slug}">${ses.TASKS[t].label}</a></li>`).join('');
- const all=ses.list();$('navSessPick').hidden=all.length<2;
- $('sessSelect').innerHTML=all.map(x=>`<option value="${x.key}"${x===s?' selected':''}>${ses.label(x)}</option>`).join('');
-}
-ses.hooks.onChange=s=>{
- sessionNav();
- if(s?.drawings)drw.useRows(s.drawings.rows,`${ses.label(s)}, main trials`,s.drawings.cfg);else drw.usePilot();
- navState(parse());
- if(page==='overview')overview();
-};
-async function addFiles(list){
- const st=$('upStatus');st.className='upStatus';st.textContent=`Reading ${list.length} file${list.length>1?'s':''}…`;
- try{const r=await inv.addFiles(list);st.textContent=`Sorted ${r.files.length} files into ${r.sessions.length} sessions.`;$('navData').hidden=false;if(page==='data')inv.render();else location.hash='#/data';}
- catch(e){st.className='upStatus error';st.textContent=e.message;}
-}
-inv.hooks.onOpen=async files=>{
- try{const res=await ses.loadFiles(files),s=ses.current(),first=ses.tasksIn(s)[0];
-  setStatus('');location.hash=first&&first!=='Trefoil2D'?`#/s/${ses.TASKS[first].slug}`:'#/';void res;}
- catch(e){setStatus(e.message,true);}
-};
-// Folders dropped on the zone arrive as directory entries; walk them for files.
-async function filesFromDrop(dt){
- const items=[...dt.items||[]].map(i=>i.webkitGetAsEntry?.()).filter(Boolean);
- if(!items.length)return [...dt.files];
- const out=[];
- const walk=async e=>{if(e.isFile)out.push(await new Promise((res,rej)=>e.file(res,rej)));else if(e.isDirectory){const r=e.createReader();let batch;do{batch=await new Promise((res,rej)=>r.readEntries(res,rej));for(const x of batch)await walk(x);}while(batch.length);}};
- for(const e of items)await walk(e);
- return out;
-}
-$('sessFiles').onchange=e=>{if(e.target.files.length)addFiles([...e.target.files]);e.target.value='';};
-$('sessFolder').onchange=e=>{if(e.target.files.length)addFiles([...e.target.files]);e.target.value='';};
-{const z=$('dropZone');
- for(const ev of ['dragenter','dragover'])z.addEventListener(ev,e=>{e.preventDefault();z.classList.add('over');});
- for(const ev of ['dragleave','drop'])z.addEventListener(ev,e=>{e.preventDefault();z.classList.remove('over');});
- z.addEventListener('drop',async e=>{const f=await filesFromDrop(e.dataTransfer);if(f.length)addFiles(f);});}
+ses.hooks.onChange=s=>{if(s?.drawings)drw.useRows(s.drawings.rows,`${ses.label(s)}, main trials`,s.drawings.cfg);else drw.usePilot();};
+dash.hooks.onDrawings=s=>{if(!s)return;ses.activate(s.key);location.hash='#/drawings';};
+inv.hooks.onOpen=async files=>{try{await ses.loadFiles(files);const s=ses.current(),first=ses.tasksIn(s)[0];setStatus('');location.hash=first&&first!=='Trefoil2D'?`#/s/${ses.TASKS[first].slug}`:'#/';}catch(e){setStatus(e.message,true);}};
 $('dCsv').onclick=()=>{const t=inv.csv();if(!t)return;const a=document.createElement('a');a.href=URL.createObjectURL(new Blob(['\uFEFF'+t],{type:'text/csv'}));a.download='data_inventory.csv';a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);};
-$('dClear').onclick=()=>{inv.clear();$('navData').hidden=true;$('upStatus').textContent='';location.hash='#/';};
-$('sessClose').onclick=()=>{ses.activate(null);$('upStatus').textContent='';location.hash='#/';};
-$('sessSelect').onchange=e=>ses.activate(e.target.value);
-
+$('dClear').onclick=()=>{inv.clear();location.hash='#/';};
+dash.init();
 route();

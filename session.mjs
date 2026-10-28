@@ -14,16 +14,26 @@ export const hooks={onChange:null};
 export function current(){return active;}
 export function list(){return [...sessions.values()];}
 export function activate(key){active=key?sessions.get(key)||null:null;hooks.onChange?.(active);}
-const worker=new Worker(new URL('./session-worker.mjs',import.meta.url),{type:'module'});
-const pending=new Map();
-worker.onmessage=e=>{const p=pending.get(e.data.id);if(!p)return;pending.delete(e.data.id);e.data.error?p.reject(Error(e.data.error)):p.resolve(e.data);};
-worker.onerror=e=>{for(const p of pending.values())p.reject(Error('Processing failed: '+(e.message||'worker error')));pending.clear();};
-
-export async function loadFiles(fileList){
+// One worker per session, so several sessions are processed at the same time.
+function runWorker(files){
+ return new Promise((resolve,reject)=>{const w=new Worker(new URL('./session-worker.mjs',import.meta.url),{type:'module'});
+  w.onmessage=e=>{w.terminate();e.data.error?reject(Error(e.data.error)):resolve(e.data);};
+  w.onerror=e=>{w.terminate();reject(Error('Processing failed: '+(e.message||'worker error')));};
+  w.postMessage({id:++job,files});});
+}
+// Same grouping as keyOf in session-worker.mjs: summer calibration and main files of one session share a key.
+const sessionKey=n=>{const b=n.replace(/\.csv$/i,'');const m=b.match(/^RotatingTrace(?:_Calib)?_+(.+)$/);return m?'summer_'+m[1]:b.replace(/_(Trials|Samples|HMD|SessionInfo)_.*$/i,'');};
+export async function loadFiles(fileList,onProgress){
  const files=[...fileList];if(!files.length)throw Error('Choose at least one CSV file.');
  for(const f of files)if(f.size>80*1024*1024)throw Error(`${f.name} is larger than 80 MB.`);
  const payload=await Promise.all(files.map(async f=>({name:f.name,text:await f.text()})));
- const id=++job,res=await new Promise((resolve,reject)=>{pending.set(id,{resolve,reject});worker.postMessage({id,files:payload});});
+ const byKey=new Map();for(const p of payload){const k=sessionKey(p.name);if(!byKey.has(k))byKey.set(k,[]);byKey.get(k).push(p);}
+ let done=0;onProgress?.(0,byKey.size);
+ // A few workers at a time: a summer folder can hold ~100 sessions.
+ const queue=[...byKey.values()],results=[],lanes=Math.max(1,Math.min(6,(navigator.hardwareConcurrency||4)-1));
+ await Promise.all(Array.from({length:lanes},async()=>{while(queue.length){const g=queue.shift();results.push(await runWorker(g).catch(e=>({sessions:[],skipped:[],missing:[e.message]})));onProgress?.(++done,byKey.size);}}));
+ const res={sessions:results.flatMap(r=>r.sessions),skipped:results.flatMap(r=>r.skipped),missing:results.flatMap(r=>r.missing)};
+ if(!res.sessions.length)throw Error(res.missing.join(' ')||'No session could be read.');
  if(!ref3D)ref3D=await loadTrefoil3DReference(new URL('./reference/coords_R2_1.5.csv',import.meta.url).href).catch(()=>null);
  for(const s of res.sessions)sessions.set(s.key,s);
  activate(res.sessions[0].key);
