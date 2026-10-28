@@ -3,6 +3,7 @@
 import * as ses from './session.mjs';
 import * as inv from './inventory.mjs';
 import {groundTruth,loadTrefoil3DReference} from './session-geometry.mjs';
+import {binnedPaths} from './paths.mjs';
 const $=id=>document.getElementById(id);
 const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const fmt=(x,n=1)=>x===null||x===undefined||!Number.isFinite(x)?'—':x.toFixed(n);
@@ -16,7 +17,7 @@ const TASKNAME=Object.fromEntries(GROUPS.flatMap(([,t])=>t.map(([k,,n])=>[k,n]))
 const keyOf=r=>r.task==='Cube'?(r.cond==='Rotating'?'Cube_R':'Cube_S'):r.task==='Trefoil3D'?(r.cond==='Rotating'?'T3D_R':'T3D_S'):r.task==='Trefoil2D'?'T2D':r.task;
 const PCOL=['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#6250d6','#e34948'];
 
-const st={datasets:[],task:null,people:new Set(),session:null,trial:null,cmp:'pp',show:'raw',pick:null,mean:true};
+const st={datasets:[],task:null,people:new Set(),session:null,trial:null,cmp:'pp',pick:null,mean:true};
 // Ellipse and sphere trials each have their own target (aspect ratio, equator or outline), so they are shown one at a time.
 const PER_TRIAL=new Set(['Ellipse','Sphere']);
 let groups=[],ref3D=null,peopleTouched=false;
@@ -136,27 +137,18 @@ function gtFor(g,t,only){
  const tr=only||g.trials.find(r=>r.task===t);if(!tr||tr.frame!=='canonical')return [];
  return groundTruth({meta:tr.rec.meta},g.geometry,'canonical',0,ref3D).map(p=>({...p,points:p.points.map(q=>q.map(v=>v*1000))}));
 }
-// Paths summarised along the ground truth: each sample goes to its nearest point on the ground-truth curve,
-// the curve is cut into equal-length bins, and each bin keeps the median (per trial) or mean (across trials) position.
-// 2D trefoil and ellipse are matched on X–Y only, because depth is what the participant adds.
-const XY_ONLY=new Set(['T2D','Ellipse']);
-function track(gt){
- const P=gt.filter(p=>p.kind==='ground');let total=0;
- const paths=P.map(p=>{const s=[0];for(let i=1;i<p.points.length;i++)s.push(s[i-1]+Math.hypot(...p.points[i].map((v,k)=>v-p.points[i-1][k])));total+=s.at(-1);return {pts:p.points,s};});
- return {paths,total};
-}
-function binnedPaths(trials,gt,t,{bins,minN,stat}){
- const T=track(gt);if(!T.total)return [];
- const L=T.total/bins,step=L/4,xy=XY_ONLY.has(t),dense=[];
- T.paths.forEach((p,pi)=>{for(let i=1;i<p.pts.length;i++){const a=p.pts[i-1],b=p.pts[i],len=p.s[i]-p.s[i-1],n=Math.max(1,Math.ceil(len/step));for(let k=0;k<n;k++){const f=k/n;dense.push({q:a.map((v,j)=>v+(b[j]-v)*f),pi,s:p.s[i-1]+len*f});}}});
- const all=dense.map(d=>d.q),ext=Math.max(...[0,1,2].map(k=>Math.max(...all.map(q=>q[k]))-Math.min(...all.map(q=>q[k])))),thr=t.startsWith('Cube')?ext*.21:ext*.35;
- const acc=T.paths.map(p=>Array.from({length:Math.ceil(p.s.at(-1)/L)+1},()=>[]));
- for(const tr of trials)for(const p of tr.p){if(!p)continue;let bd=Infinity,bi=-1;for(let i=0;i<dense.length;i++){const q=dense[i].q,d=xy?Math.hypot(p[0]-q[0],p[1]-q[1]):Math.hypot(p[0]-q[0],p[1]-q[1],p[2]-q[2]);if(d<bd){bd=d;bi=i;}}
-  if(bd>thr)continue;const d=dense[bi];acc[d.pi][Math.floor(d.s/L)].push(p);}
- const mid=a=>{const b=[...a].sort((x,y)=>x-y),m=b.length>>1;return b.length%2?b[m]:(b[m-1]+b[m])/2;};
- const out=[];
- for(const binsP of acc){let seg=[];for(const c of binsP){if(c.length<minN){if(seg.length>1)out.push(seg);seg=[];continue;}seg.push([0,1,2].map(k=>stat==='median'?mid(c.map(p=>p[k])):c.reduce((x,p)=>x+p[k],0)/c.length));}if(seg.length>1)out.push(seg);}
- return out;
+// 1 mm is the same length on every axis, and every sample stays in the scene. The camera starts zoomed onto the
+// ground truth (or the central 96% of the samples when there is none); zoom out to see samples far outside it.
+function camFor(traces){
+ const all=[[],[],[]],ref=[[],[],[]];
+ for(const tr of traces){if(tr.type!=='scatter3d'||tr.mode==='text')continue;const gt=/^Ground truth|ground truth|wireframe|ellipse|circle|target/i.test(tr.name||'')&&!/Trial|mean|AA|ZZ/.test(tr.name||'');
+  ['x','y','z'].forEach((k,i)=>{for(const v of tr[k]||[])if(Number.isFinite(v)){all[i].push(v);if(gt)ref[i].push(v);}});}
+ if(!all[0].length)return {eye:{x:.35,y:-1.9,z:.55},up:{x:0,y:0,z:1}};
+ const q=(a,f)=>{const b=[...a].sort((x,y)=>x-y);return b[Math.floor(f*(b.length-1))];};
+ const lo=all.map(a=>Math.min(...a)),hi=all.map(a=>Math.max(...a)),mid=lo.map((v,i)=>(v+hi[i])/2),maxR=Math.max(...hi.map((v,i)=>v-lo[i]))||1;
+ const R=ref[0].length?ref:all.map(a=>[q(a,.02),q(a,.98)]),rl=R.map(a=>Math.min(...a)),rh=R.map(a=>Math.max(...a)),c=rl.map((v,i)=>(v+rh[i])/2),span=Math.max(...rh.map((v,i)=>v-rl[i]))||maxR;
+ const center=c.map((v,i)=>(v-mid[i])/maxR),k=Math.max(.5,3.4*span/maxR),d=[.18,-1,.29],n=Math.hypot(...d);
+ return {center:{x:center[0],y:center[1],z:center[2]},eye:{x:center[0]+d[0]/n*k,y:center[1]+d[1]/n*k,z:center[2]+d[2]/n*k},up:{x:0,y:0,z:1}};
 }
 const line=(pts,o)=>({type:'scatter3d',mode:'lines',x:pts.map(p=>p?p[0]:null),y:pts.map(p=>p?p[2]:null),z:pts.map(p=>p?p[1]:null),...o});
 function renderViz(){
@@ -177,42 +169,42 @@ function renderViz(){
    if(t.startsWith('Cube')&&g.half){const mids=TRACED.map(([a,b])=>CUBE[a].map((v,k)=>(v+CUBE[b][k])/2*g.half*1.14));traces.push({type:'scatter3d',mode:'text',x:mids.map(m=>m[0]),y:mids.map(m=>m[2]),z:mids.map(m=>m[1]),text:mids.map((_,i)=>String(i+1)),textfont:{size:13,color:'#1c2226'},hoverinfo:'skip',showlegend:false});}
    gtDone=true;}
   if(single){
-   const gt=gtFor(g,t,one),pickT=!one&&st.pick?tr.filter(r=>r.id===st.pick):[],shown=pickT.length?pickT:tr,median=st.show==='median'&&gt.length;
+   const gt=gtFor(g,t,one),pickT=!one&&st.pick?tr.filter(r=>r.id===st.pick):[],shown=pickT.length?pickT:tr,cube=t.startsWith('Cube');
    shown.forEach(r=>{const k=tr.indexOf(r),c=PCOL[k%PCOL.length],nm=`Trial ${r.i}${Number.isFinite(r.mean)?` (${fmt(r.mean)} mm)`:''}`;
-    if(median){traces.push(line(r.p,{name:nm+', raw',legendgroup:'t'+r.i,showlegend:false,line:{color:c,width:1.5},opacity:.18,hoverinfo:'skip'}));
-     binnedPaths([r],gt,t,{bins:100,minN:2,stat:'median'}).forEach((sg,j)=>traces.push(line(sg,{name:nm+', median',legendgroup:'t'+r.i,showlegend:j===0,line:{color:c,width:4},hovertemplate:`Trial ${r.i}, median path<extra></extra>`})));}
-    else traces.push(line(r.p,{name:nm,legendgroup:'t'+r.i,line:{color:c,width:2.5},opacity:.85,hovertemplate:`Trial ${r.i}<extra></extra>`}));
+    traces.push(line(r.p,{name:nm,legendgroup:'t'+r.i,line:{color:c,width:2.5},opacity:.85,hovertemplate:`Trial ${r.i}<extra></extra>`}));
     const a=r.p.find(Boolean),z=[...r.p].reverse().find(Boolean);if(a&&z)traces.push({type:'scatter3d',mode:'markers',x:[a[0],z[0]],y:[a[2],z[2]],z:[a[1],z[1]],marker:{size:[8,7],symbol:['circle','square'],color:c,line:{color:'#fff',width:1.5}},legendgroup:'t'+r.i,showlegend:false,hovertemplate:'%{text}<extra></extra>',text:[`Trial ${r.i} start`,`Trial ${r.i} end`]});});
-   if(st.mean&&shown.length>1&&gt.length)binnedPaths(shown,gt,t,{bins:200,minN:3,stat:'mean'}).forEach((sg,j)=>traces.push(line(sg,{name:`Mean path (${shown.length} trials)`,legendgroup:'mean',showlegend:j===0,line:{color:'#6250d6',width:6},opacity:.9,hoverinfo:'skip'})));
+   // Mean path for the cube only: its edges make the average along the ground truth meaningful.
+   if(cube&&st.mean&&shown.length>1&&gt.length)binnedPaths(shown.flatMap(r=>r.p),gt,t,{bins:90,minN:3,stat:'mean'}).forEach((sg,j)=>traces.push(line(sg,{name:`Mean path (${shown.length} trials)`,legendgroup:'mean',showlegend:j===0,line:{color:'#6250d6',width:6},opacity:.9,hoverinfo:'skip'})));
    const m=avg(tr.map(r=>r.mean)),all3=g.trials.filter(r=>r.task===t).sort((a,b)=>a.i-b.i);
    const stat=one&&t==='Ellipse'?`aspect ${fmt(one.expected?.aspect,2)}: traced tilt ${fmt(one.shape?.slantDeg,1)}°, ${fmt(one.expected?.slantDeg,1)}° for a circle`:one?`${esc(one.rec?.cond||'')}${one.rec?.dir!=null?`, direction ${one.rec.dir>=0?'+':'−'}`:''}: ${m===null?'distance not recorded':`mean ${fmt(m)} mm`}`:t==='T2D'?'compared between trials, not with a target':m===null?'Distance not recorded':`mean ${fmt(m)} mm`;
-   info=`<strong>${esc(TASKNAME[t])}</strong><span>${esc(pid)}, session ${g.n}${g.date?`, ${fmtDate(g.date)}`:''}</span><span>${one?`trial ${one.i} of ${all3.length}`:`${tr.length} trial${tr.length>1?'s':''}`}</span><span>${stat}</span>`;
+   // September files: the trefoil's depth position in that build is not confirmed, so only X–Y is meaningful against it.
+   const sepNote=t==='T2D'&&g.build==='autumn-legacy'?'<span class="warn">September build: the trefoil\'s depth position is not confirmed. Compare in X–Y (look from the front).</span>':'';
+   info=`<strong>${esc(TASKNAME[t])}</strong><span>${esc(pid)}, session ${g.n}${g.date?`, ${fmtDate(g.date)}`:''}</span><span>${one?`trial ${one.i} of ${all3.length}`:`${tr.length} trial${tr.length>1?'s':''}`}</span><span>${stat}</span>${sepNote}`;
    if(one)info+=`<span class="sessPick">Trial ${all3.map(x=>`<button type="button" class="chip mini${x===one?' sel':''}" data-trial="${esc(x.id)}">${x.i}</button>`).join('')}</span>`;
    const segB=(k,l,on,attr)=>`<button type="button" class="segB${on?' on':''}" ${attr}="${k}" aria-pressed="${on}">${l}</button>`;
-   ctrl=`<span class="vizCtl"><span class="segG" role="group" aria-label="Path">${segB('raw','Raw trajectory',st.show==='raw','data-show')}${segB('median','Median per trial',st.show==='median','data-show')}</span>`+
+   ctrl=`<span class="vizCtl">`+
     (one?'':`<span class="segG" role="group" aria-label="Trials">${segB('','All trials',!st.pick||!tr.some(r=>r.id===st.pick),'data-pick')}${tr.map(r=>segB(r.id,'Trial '+r.i,st.pick===r.id,'data-pick')).join('')}</span>`)+
-    (!one&&tr.length>1?`<label class="check"><input type="checkbox" id="vizMean"${st.mean?' checked':''}> <span class="meanKey"></span>Mean path</label>`:'')+
+    (cube&&tr.length>1?`<label class="check"><input type="checkbox" id="vizMean"${st.mean?' checked':''}> <span class="meanKey"></span>Mean path</label>`:'')+
     `<span class="dim">● start&nbsp;&nbsp;■ end</span></span>`;
    const all=sessionsOf(pid,t);
    if(all.length>1)info+=`<span class="sessPick">Session ${all.map(x=>`<button type="button" class="chip mini${x===g?' sel':''}" data-sess="${x.key}">${x.n}</button>`).join('')}</span>`;
   }else{
    const c=PCOL[pi%PCOL.length];
    const gt=gtFor(g,t,null);
-   if(st.show==='median'&&gt.length)binnedPaths(tr,gt,t,{bins:200,minN:3,stat:'mean'}).forEach((sg,k)=>traces.push(line(scaleP(sg,sc(g)),{name:pid+' mean path'+(sc(g)!==1?' (scaled)':''),legendgroup:pid,showlegend:k===0,line:{color:c,width:4}})));
+   if(t.startsWith('Cube')&&st.mean&&gt.length)binnedPaths(tr.flatMap(r=>r.p),gt,t,{bins:90,minN:3,stat:'mean'}).forEach((sg,k)=>traces.push(line(scaleP(sg,sc(g)),{name:pid+' mean path'+(sc(g)!==1?' (scaled)':''),legendgroup:pid,showlegend:k===0,line:{color:c,width:4}})));
    else tr.forEach((r,k)=>traces.push(line(scaleP(r.p,sc(g)),{name:pid,legendgroup:pid,showlegend:k===0,line:{color:c,width:2},opacity:.6})));
   }
  }
- if(!single){ctrl=`<span class="vizCtl"><span class="segG" role="group" aria-label="Path"><button type="button" class="segB${st.show==='raw'?' on':''}" data-show="raw" aria-pressed="${st.show==='raw'}">Raw trajectory</button><button type="button" class="segB${st.show==='median'?' on':''}" data-show="median" aria-pressed="${st.show==='median'}">Mean path per participant</button></span></span>`;}
- if(!single)info=`<strong>${esc(TASKNAME[t])}</strong><span>${P.length} participants, latest session each</span><span>${st.show==='median'?'Mean path per participant':'All trials, one colour per participant'}</span>${halves.size>1?`<span class="warn">Cube sizes differ between datasets (${[...halves].map(h=>h+' mm').join(', ')}); paths are scaled to a ${Math.round(refHalf*2)} mm cube.</span>`:''}`;
+ if(!single)ctrl=t.startsWith('Cube')?`<span class="vizCtl"><label class="check"><input type="checkbox" id="vizMean"${st.mean?' checked':''}> Mean path per participant</label></span>`:'';
+ if(!single)info=`<strong>${esc(TASKNAME[t])}</strong><span>${P.length} participants, latest session each</span><span>${t.startsWith('Cube')&&st.mean?'Mean path per participant':'All trials, one colour per participant'}</span>${halves.size>1?`<span class="warn">Cube sizes differ between datasets (${[...halves].map(h=>h+' mm').join(', ')}); paths are scaled to a ${Math.round(refHalf*2)} mm cube.</span>`:''}`;
  head.innerHTML=`<div class="vizInfo">${info}</div>${ctrl}`;
- head.querySelectorAll('[data-show]').forEach(b=>b.onclick=()=>{st.show=b.dataset.show;renderViz();});
  head.querySelectorAll('[data-pick]').forEach(b=>b.onclick=()=>{st.pick=b.dataset.pick||null;renderViz();});
  $('vizMean')&&($('vizMean').onchange=e=>{st.mean=e.target.checked;renderViz();});
  head.querySelectorAll('[data-sess]').forEach(b=>b.onclick=()=>{st.session=b.dataset.sess;st.trial=null;st.pick=null;render();});
  head.querySelectorAll('[data-trial]').forEach(b=>b.onclick=()=>{st.trial=b.dataset.trial;render();});
  const ax=n=>({title:{text:n,font:{size:12}},gridcolor:'#e6e9e9',zerolinecolor:'#d7dcdc',color:'#5d696f',backgroundcolor:'rgba(0,0,0,0)',showspikes:false});
  const layout={paper_bgcolor:'rgba(0,0,0,0)',font:{family:'Inter, system-ui, sans-serif',size:12,color:'#1c2226'},margin:{l:0,r:0,t:0,b:0},showlegend:true,legend:{x:0,y:1,bgcolor:'rgba(255,255,255,.7)',font:{size:11}},
-  scene:{aspectmode:t.startsWith('Cube')?'cube':'data',xaxis:ax('X (mm)'),yaxis:ax('Z depth (mm)'),zaxis:ax('Y (mm)'),camera:{eye:{x:.35,y:-1.9,z:.55},up:{x:0,y:0,z:1}}},uirevision:t};
+  scene:{aspectmode:'data',xaxis:ax('X (mm)'),yaxis:ax('Z depth (mm)'),zaxis:ax('Y (mm)'),camera:camFor(traces)},uirevision:t+'|'+P.join(',')+'|'+(st.session||'')};
  const draw=()=>window.Plotly.react(plot,traces,layout,{displaylogo:false,responsive:true,scrollZoom:false,modeBarButtonsToRemove:['toImage']});
  if(window.Plotly)draw();else addEventListener('load',draw,{once:true});
 }
@@ -252,7 +244,9 @@ function renderCompare(){
 // Height left for the chart under its title and description (about two lines).
 const chartH=box=>{const h=box.classList.contains('cmpFig')?box.parentElement.clientHeight-54:(box.clientHeight||230);return Math.max(100,Math.min(300,h-22));};
 function svgFrame(W,Hh){return `<svg viewBox="0 0 ${W} ${Hh}" width="${W}" height="${Hh}" style="max-width:100%" role="img">`;}
-function axisY(g,ymax,y,l,r,W,unit='mm'){for(let v=0;v<=ymax;v+=ymax>30?10:5)g.push(`<line class="grid" x1="${l}" x2="${W-r}" y1="${y(v)}" y2="${y(v)}"/><text class="tick" x="${l-6}" y="${y(v)+4}" text-anchor="end">${v}</text>`);g.push(`<text class="axis" x="4" y="10">${unit}</text>`);}
+// About four gridlines whatever the range: steps of 1, 2, 5, 10, 20, 50…
+const niceStep=m=>{const r=m/4,p=10**Math.floor(Math.log10(r)),f=r/p;return (f<=1?1:f<=2?2:f<=5?5:10)*p;};
+function axisY(g,ymax,y,l,r,W,unit='mm'){const st=niceStep(ymax);for(let v=0;v<=ymax+1e-9;v+=st)g.push(`<line class="grid" x1="${l}" x2="${W-r}" y1="${y(v)}" y2="${y(v)}"/><text class="tick" x="${l-6}" y="${y(v)+4}" text-anchor="end">${v}</text>`);g.push(`<text class="axis" x="4" y="10">${unit}</text>`);}
 function chartPeople(box){
  const t=st.task,W=Math.max(320,box.clientWidth),Hh=chartH(box),m={l:40,r:44,t:14,b:30};
  if(t==='Ellipse'){chartEllipsePeople(box,W);return;}

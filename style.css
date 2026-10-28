@@ -640,3 +640,5 @@ body[data-page=overview] .content{padding-bottom:var(--m)}
 .cmpCap h3{font-size:.84rem;font-weight:500;color:var(--ink)}
 .cmpCap p{font-size:.74rem;color:var(--muted);margin-top:2px;max-width:90ch}
 .cmpFig{min-height:0}
+.cmpRow{padding:7px 2px}
+.cmpList{justify-content:flex-start}
