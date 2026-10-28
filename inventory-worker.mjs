@@ -57,7 +57,8 @@ async function scan(file){
  if(info.kind==='trials'){
   const T=col('Task'),C=col('Condition'),A=col('ActualDuration'),SV=col('StimulusViewingMode'),CV=col('CursorViewingMode'),tasks={};
   for(const r of rows){const t=r[T],c=r[C]||'';tasks[t]??={trials:0,conds:{},durations:[]};tasks[t].trials++;tasks[t].conds[c]=(tasks[t].conds[c]||0)+1;if(A>=0&&r[A]!=='')tasks[t].durations.push(+r[A]);}
-  info.summary={tasks,viewing:[...new Set(rows.map(r=>`${r[SV]||'?'} stimulus, ${r[CV]||'?'} cursor`))]};
+  const B=col('Build');
+  info.summary={tasks,builds:B>=0?[...new Set(rows.map(r=>r[B]).filter(Boolean))]:[],viewing:[...new Set(rows.map(r=>`${r[SV]||'?'} stimulus, ${r[CV]||'?'} cursor`))]};
  }else if(info.kind==='samples'){
   const ID=col('TrialID'),T=col('Task'),E=col('TargetError'),LX=col('LocalX'),tasks={};
   for(const r of rows){const t=r[T];tasks[t]??={ids:new Set(),rows:0,errEmpty:{},errRows:{},local:0};const k=tasks[t];k.ids.add(r[ID]);k.rows++;

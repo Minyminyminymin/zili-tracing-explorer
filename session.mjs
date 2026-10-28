@@ -26,7 +26,7 @@ const sessionKey=n=>{const b=n.replace(/\.csv$/i,'');const m=b.match(/^RotatingT
 export async function loadFiles(fileList,onProgress){
  const files=[...fileList];if(!files.length)throw Error('Choose at least one CSV file.');
  for(const f of files)if(f.size>80*1024*1024)throw Error(`${f.name} is larger than 80 MB.`);
- const payload=await Promise.all(files.map(async f=>({name:f.name,text:await f.text()})));
+ const payload=files.map(f=>({name:f.name,file:f}));
  const byKey=new Map();for(const p of payload){const k=sessionKey(p.name);if(!byKey.has(k))byKey.set(k,[]);byKey.get(k).push(p);}
  let done=0;onProgress?.(0,byKey.size);
  // A few workers at a time: a summer folder can hold ~100 sessions.

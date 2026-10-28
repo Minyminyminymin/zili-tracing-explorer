@@ -36,7 +36,9 @@ function build(files){
   sessions.get(key).files.push(f);
  }
  for(const s of sessions.values()){
-  s.build=s.files.some(f=>f.kind==='trials'||f.kind==='samples')?'current':'summer';
+  s.unified=s.files.some(f=>f.kind==='trials'||f.kind==='samples');
+  // Formatted files name their build in the Trials file; raw per-task exports are summer up to 31 Aug, autumn-legacy after.
+  s.build=s.unified?(s.files.flatMap(f=>f.kind==='trials'?f.summary?.builds||[]:[])[0]||'current').toLowerCase():s.date<='20260831'?'summer':'autumn-legacy';
   const infoF=s.files.find(f=>f.kind==='info');if(infoF?.summary){s.info=infoF.summary;s.pid=s.pid||infoF.summary.pid;}
   s.tasks=taskCounts(s);
   s.test=/^test/i.test(s.pid||'')||s.files.some(f=>/test/i.test(f.label||''));
@@ -59,13 +61,16 @@ function build(files){
  return {files,sessions:list,loose,participants:[...new Set(list.map(s=>s.pid).filter(Boolean))].sort(),dates:[...new Set(list.map(s=>s.date))].sort()};
 }
 const secs=t=>+t.slice(0,2)*3600+ +t.slice(2,4)*60+ +t.slice(4,6);
-export const label=s=>`${s.pid||'No ID'} ${s.build==='current'?`S${s.session}`:s.label||fmtTime(s.time)||''}`.trim();
+export const label=s=>`${s.pid||'No ID'} ${s.unified?`S${s.session}`:s.label||fmtTime(s.time)||''}`.trim();
+const buildName=b=>b==='current'?'Current':b==='summer'?'Summer':b.replace(/-/g,' ').replace(/^./,c=>c.toUpperCase());
+// A formatted session has a Calibration and a MainExperiment part; read them as one.
+function merged(s,kind){const F=s.files.filter(f=>f.kind===kind);if(!F.length)return null;return {summary:{tasks:Object.assign({},...F.map(f=>f.summary?.tasks||{})),builds:F.flatMap(f=>f.summary?.builds||[]),viewing:F.flatMap(f=>f.summary?.viewing||[])},rows:F.reduce((n,f)=>n+(f.rows||0),0)};}
 function taskCounts(s){
  const out={};const add=(t,c,n)=>{out[t]??={trials:0,conds:{}};out[t].trials+=n;if(c)out[t].conds[c]=(out[t].conds[c]||0)+n;};
- const tr=s.files.find(f=>f.kind==='trials'),sm=s.files.find(f=>f.kind==='samples');
+ const tr=merged(s,'trials'),sm=merged(s,'samples');
  if(tr?.summary)for(const [t,v] of Object.entries(tr.summary.tasks))for(const [c,n] of Object.entries(v.conds))add(t,c,n);
  else if(sm?.summary)for(const [t,v] of Object.entries(sm.summary.tasks))add(t,'',v.trials);
- if(s.build==='summer'){
+ if(!s.unified){
   for(const f of s.files){
    if(f.kind==='calibLegacy'&&f.summary)for(const [ty,v] of Object.entries(f.summary.types)){const [t,c]=LEGACY_TYPE[ty]||[ty,''];add(t,c,v.trials);}
    if(f.kind==='mainLegacy'&&f.summary)add('Trefoil2D','',f.summary.trials);
@@ -86,7 +91,7 @@ const A=[
  ['hmd','Head movement','Head position and rotation during the session.'],
 ];
 function analyses(s){
- const r={},tr=s.files.find(f=>f.kind==='trials'),sm=s.files.find(f=>f.kind==='samples'),T=s.tasks,cur=s.build==='current';
+ const r={},tr=merged(s,'trials'),sm=merged(s,'samples'),T=s.tasks,cur=s.unified;
  const empty=(task)=>{const st=sm?.summary?.tasks?.[task];if(!st)return null;return Object.entries(st.errRows).map(([c,n])=>({c,n,e:st.errEmpty[c]||0}));};
  const n=t=>T[t]?.trials||0;
  // accuracy tasks in the current build need Trials (geometry) + Samples (TargetError)
@@ -132,7 +137,7 @@ export function render(){
  let h=`<thead><tr><th scope="col">Participant</th><th scope="col">Session</th><th scope="col">Date</th><th scope="col">Format</th>${TASKS.map(([,l])=>`<th scope="col" class="num">${l}</th>`).join('')}<th scope="col">HMD</th><th scope="col"></th></tr></thead><tbody>`;
  for(const s of S){
   const cell=t=>{const v=s.tasks[t];if(!v)return '<td class="num dim">—</td>';const c=Object.entries(v.conds).map(([k,n])=>`${n} ${k.replace('AspectRatio_','aspect ').toLowerCase()}`).join(', ');return `<td class="num" title="${esc(c)}">${v.trials}${c&&Object.keys(v.conds).length>1?`<small>${esc(c)}</small>`:''}</td>`;};
-  h+=`<tr><th scope="row">${esc(s.pid||'No ID')}${s.test?' <small>test</small>':''}</th><td>${s.build==='current'?`S${s.session}`:esc(s.label||'')} <span class="dim">#${s.order}</span></td><td>${fmtDate(s.date)}${s.time?` <span class="dim">${fmtTime(s.time)}</span>`:''}</td><td>${s.build==='current'?'Current':'Summer'}</td>${TASKS.map(([t])=>cell(t)).join('')}<td>${s.hmd.length?'Yes':'<span class="dim">No</span>'}</td><td>${s.analyses.open?`<button class="btn small" type="button" data-open="${esc(s.key)}">Open</button>`:''}</td></tr>`;
+  h+=`<tr><th scope="row">${esc(s.pid||'No ID')}${s.test?' <small>test</small>':''}</th><td>${s.unified?`S${s.session}`:esc(s.label||'')} <span class="dim">#${s.order}</span></td><td>${fmtDate(s.date)}${s.time&&!/^0000/.test(s.time)?` <span class="dim">${fmtTime(s.time)}</span>`:''}</td><td>${buildName(s.build)}</td>${TASKS.map(([t])=>cell(t)).join('')}<td>${s.hmd.length?'Yes':'<span class="dim">No</span>'}</td><td>${s.analyses.open?`<button class="btn small" type="button" data-open="${esc(s.key)}">Open</button>`:''}</td></tr>`;
  }
  $('dSessions').innerHTML=h+'</tbody>';
  $('dSessions').querySelectorAll('[data-open]').forEach(b=>b.onclick=()=>openSession(b.dataset.open,b));
@@ -151,7 +156,7 @@ export function render(){
  acr.push(multi.length?`<li><strong>Change across sessions:</strong> possible for ${multi.map(([p,a])=>`${p} (${a.length} sessions)`).join(', ')}.${multi.some(([,a])=>new Set(a.map(x=>x.build)).size>1)?' Summer and current sessions use different stimulus geometry, so compare distances, not positions.':''}</li>`:'<li><strong>Change across sessions:</strong> not possible yet; every participant has one session in these files.</li>');
  const cube=Object.entries(byP).filter(([,a])=>a.some(x=>x.analyses.cube.st==='yes'));
  acr.push(cube.length>1?`<li><strong>Comparison between participants:</strong> possible for cube accuracy (${cube.map(([p])=>p).join(', ')}). With ${cube.length} participants, treat differences as descriptive.</li>`:'<li><strong>Comparison between participants:</strong> needs at least two participants with cube data.</li>');
- const views=[...new Set(S.filter(s=>!s.test).flatMap(s=>s.files.find(f=>f.kind==='trials')?.summary?.viewing||[]))].filter(v=>!v.includes('?'));
+ const views=[...new Set(S.filter(s=>!s.test).flatMap(s=>merged(s,'trials')?.summary?.viewing||[]))].filter(v=>!v.includes('?'));
  if(views.length)acr.push(`<li><strong>Viewing modes recorded:</strong> ${esc(views.join('; '))}.</li>`);
  $('dAcross').innerHTML=acr.join('');
  // files
@@ -168,6 +173,6 @@ async function openSession(key,btn){
 export function csv(){
  if(!inv)return '';
  const head=['participant','session','order','date','time','format',...TASKS.map(([t])=>t+'_trials'),'hmd',...A.map(([k])=>k),...A.map(([k])=>k+'_note')];
- const rows=inv.sessions.map(s=>[s.pid||'',s.build==='current'?s.session:s.label||'',s.order,s.date,s.time||'',s.build,...TASKS.map(([t])=>s.tasks[t]?.trials||0),s.hmd.length?'yes':'no',...A.map(([k])=>s.analyses[k].st),...A.map(([k])=>`"${(s.analyses[k].why||'').replace(/"/g,"'")}"`)]);
+ const rows=inv.sessions.map(s=>[s.pid||'',s.unified?s.session:s.label||'',s.order,s.date,s.time||'',s.build,...TASKS.map(([t])=>s.tasks[t]?.trials||0),s.hmd.length?'yes':'no',...A.map(([k])=>s.analyses[k].st),...A.map(([k])=>`"${(s.analyses[k].why||'').replace(/"/g,"'")}"`)]);
  return [head.join(','),...rows.map(r=>r.join(','))].join('\n');
 }

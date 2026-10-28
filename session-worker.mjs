@@ -4,7 +4,7 @@ import {deriveSessionGeometry,prepareTrial,canDerotate,tracePoint,savedTargetPoi
 
 const num=v=>v===undefined||v===null||String(v).trim()===''?null:Number(v);
 const fin=Number.isFinite;
-const MAXPTS=900;
+const MAXPTS=500;
 const ORDER=['Cube','Trefoil3D','Sphere','Ellipse','Trefoil2D'];
 
 export function parseCSV(text){
@@ -85,12 +85,20 @@ function ellipseShape(local){
  return {aspect:Math.sqrt(Math.max(0,l2)/l1),slopeZY:slope,slantDeg:Math.atan(Math.abs(slope))*180/Math.PI,r2,depthMM:(quant(P.map(p=>p[2]),.95)-quant(P.map(p=>p[2]),.05))*1000};
 }
 
+// Files written by tools/format_tracing_data.py carry their geometry in every Trials row; use it as is.
+function geometryFromColumns(joined){
+ const m=joined[0]?.meta;if(!m||!('CalibCenterX' in m))return null;
+ const v=k=>num(m[k]),p=(a,b,c)=>[v(a),v(b),v(c)].every(fin)?[v(a),v(b),v(c)]:null;
+ return {calibCenter:p('CalibCenterX','CalibCenterY','CalibCenterZ'),calibScale:v('Trefoil3DScale'),calibFactor:fin(v('Trefoil3DScale'))?v('Trefoil3DScale')/.072:null,
+  cubeWorldEdge:v('CubeEdgeM'),ellipseCenter:p('EllipseCenterX','EllipseCenterY','EllipseCenterZ'),mainCenter:p('MainCenterX','MainCenterY','MainCenterZ'),
+  mainScale:v('MainTrefoilScale'),mainFactor:null,source:m.GeometrySource||'formatted file'};
+}
 export function processSession(b,override=null){
  const groups=new Map();
  for(const r of b.samples){if(!groups.has(r.TrialID))groups.set(r.TrialID,[]);groups.get(r.TrialID).push(r);}
  const byTime=rows=>rows.map(r=>[num(r.TimeSec)??0,r]).sort((x,y)=>x[0]-y[0]).map(x=>x[1]);
  const joined=b.trials.map(t=>({meta:t,samples:byTime(groups.get(t.TrialID)||[]),hmd:[]})).filter(t=>t.samples.length);
- const geom=override?{...override}:deriveSessionGeometry(joined),notes=[];
+ const geom=override?{...override}:geometryFromColumns(joined)||deriveSessionGeometry(joined),notes=[];
  if(!geom.calibCenter&&joined.some(t=>['Cube','Trefoil3D','Sphere'].includes(t.meta.Task)))notes.push('No sphere trial with a saved centre, so Cube, Trefoil 3D and Sphere can only be shown in world coordinates.');
  if(!Number.isFinite(geom.cubeWorldEdge)&&joined.some(t=>t.meta.Task==='Cube'))notes.push('Cube size could not be derived (needs static Trefoil 3D targets), so the cube outline is not drawn.');
  for(const t of joined)prepareTrial(t,geom);
@@ -143,7 +151,9 @@ export function processSession(b,override=null){
 }
 
 if(typeof self!=='undefined')self.onmessage=async e=>{
- const {id,files}=e.data;
+ const {id}=e.data;
+ // Files arrive as File objects and are read here, so the page never holds every file's text at once.
+ const files=await Promise.all(e.data.files.map(async f=>f.text!==undefined&&typeof f.text==='string'?f:{name:f.name,text:await f.file.text()}));
  try{
   const bundles=new Map(),skipped=[];
   for(const f of files){
@@ -155,7 +165,7 @@ if(typeof self!=='undefined')self.onmessage=async e=>{
   const all=[...bundles.values()],legacy=all.filter(b=>b.calibLegacy||b.mainLegacy),cur=all.filter(b=>!(b.calibLegacy||b.mainLegacy));
   const complete=cur.filter(b=>b.trials&&b.samples),missing=cur.filter(b=>!(b.trials&&b.samples)&&(b.trials||b.samples)).map(b=>`${b.key}: add the matching ${b.trials?'Samples':'Trials'} file`);
   if(!complete.length&&!legacy.length)throw Error(missing.length?missing.join('. ')+'.':'No Trials or Samples file was recognised. Choose the *_Trials_*.csv and *_Samples_*.csv files from one session.');
-  const sessions=[];for(const b of complete){const x=processSession(b);x.build='current';sessions.push(x);}
+  const sessions=[];for(const b of complete){const x=processSession(b);x.build=(b.trials[0]?.Build||'current').toLowerCase();if(x.build!=='current'&&b.trials[0]?.GeometrySource)x.notes.unshift(`${x.build} build; geometry: ${b.trials[0].GeometrySource}.`);sessions.push(x);}
   for(const b of legacy)sessions.push(summerSession(b));
   self.postMessage({id,sessions,skipped,missing});
  }catch(err){self.postMessage({id,error:err.message});}

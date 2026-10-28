@@ -58,10 +58,10 @@ async function addFiles(files,name){
  if(!builds.length){st.datasets.push({id,name:name||`${files.length} files`,kind:'files',build:null,on:true,groups:[],note});status('');useDataset(id);return;}
  let firstId=null;
  for(const b of builds){
-  const did=id+'_'+b,gs=sessions.filter(s=>(s.build||'current')===b).map(groupOf),kept=gs.filter(g=>g.trials.length);
+  const did=id+'_'+b,gs=mergeGroups(sessions.filter(s=>(s.build||'current')===b).map(groupOf)),kept=gs.filter(g=>g.trials.length);
   const dropped=gs.reduce((n,g)=>n+g.dropped,0),emptyS=gs.length-kept.length;
   const byP={};for(const g of kept)(byP[g.pid]??=[]).push(g);for(const a of Object.values(byP)){a.sort((x,y)=>(x.date||'').localeCompare(y.date||'')||(x.label||'').localeCompare(y.label||''));a.forEach((g,k)=>g.order=k+1);}
-  const label=b==='summer'?'summer build':'current build';
+  const label=b==='summer'?'summer build':b==='current'?'current build':b.replace(/-/g,' ')+' build';
   const txt=`${Object.keys(byP).length} participant${Object.keys(byP).length===1?'':'s'}, ${kept.length} session${kept.length===1?'':'s'}.`+(dropped?` ${dropped} trial${dropped>1?'s':''} left out: the ground truth does not match the logged distance.`:'')+(emptyS?` ${emptyS} session${emptyS>1?'s':''} with nothing usable.`:'');
   st.datasets.push({id:did,name:`${name||`${files.length} files`}${builds.length>1?`, ${label}`:''}`,kind:'files',build:b,on:true,groups:kept,note:(builds.length>1?'':`${label[0].toUpperCase()+label.slice(1)}. `)+txt+(note?' '+note:'')});
   firstId??=did;
@@ -70,11 +70,17 @@ async function addFiles(files,name){
 }
 // A cube trial is left out when its recomputed distance disagrees with the logged one (more than 1% of samples off by >1 mm),
 // or when the rotating cube's angle could not be fitted confidently.
+// Formatted sessions arrive as two parts (Calibration, MainExperiment) with the same participant, number and date.
+function mergeGroups(gs){
+ const m=new Map();
+ for(const g of gs){const k=`${g.pid}|${g.session}|${g.date}`;const x=m.get(k);if(!x){m.set(k,g);continue;}x.trials.push(...g.trials);x.dropped+=g.dropped;x.parts=[...(x.parts||[x.raw]),g.raw];if(!x.half&&g.half)x.half=g.half;if(g.raw.drawings&&!x.raw.drawings)x.raw=g.raw;}
+ return [...m.values()];
+}
 function groupOf(s){
  const date=s.date||(Object.values(s.files)[0]?.match(/_(\d{8})_\d{6}/)||[])[1]||null;
  const bad=r=>r.task==='Cube'&&(r.frame!=='canonical'||(r.check&&r.check.over1mmPct>1)||(r.spin&&!r.spin.confident));
  const keep=s.trials.filter(r=>!bad(r));
- return {ds:null,key:s.key,pid:s.participant,session:s.session,label:s.label?`${s.label}`:`Session ${s.session??'?'}`,date,geometry:s.geometry,raw:s,dropped:s.trials.length-keep.length,
+ return {ds:null,key:s.key,pid:s.participant,session:s.session,label:s.label?`${s.label}`:`Session ${s.session??'?'}`,date,geometry:s.geometry,raw:s,build:s.build,dropped:s.trials.length-keep.length,
   half:Number.isFinite(s.geometry.cubeWorldEdge)?s.geometry.cubeWorldEdge*500:null,
   trials:keep.map(r=>({task:keyOf(r),i:r.index,id:r.id,rec:r,p:r.frame==='canonical'?r.p:r.w,e:r.e,mean:r.err?.mean??null,p95:r.err?.p95??null,within2:r.err?.within2??null,edges:r.edges,shape:r.shape,expected:r.expected,frame:r.frame}))};
 }
@@ -86,7 +92,9 @@ function rebuild(){
  groups=st.datasets.filter(d=>d.on).flatMap(d=>d.groups);
  // One session order per participant across every dataset, by date.
  const byP={};for(const g of groups)(byP[g.pid]??=[]).push(g);
- for(const a of Object.values(byP)){a.sort((x,y)=>(x.date||'').localeCompare(y.date||'')||(x.order||0)-(y.order||0));a.forEach((g,k)=>g.n=k+1);}
+ // Formatted and current-build files carry a session number; use it so labels match the file names. Otherwise count by date.
+ const numbered=groups.every(g=>Number.isFinite(g.session));
+ for(const a of Object.values(byP)){a.sort((x,y)=>(x.date||'').localeCompare(y.date||'')||(x.session??0)-(y.session??0)||(x.order||0)-(y.order||0));a.forEach((g,k)=>g.n=numbered?g.session:k+1);}
  if(st.task&&!available(st.task))st.task=null;
  const ppl=peopleFor(st.task);
  if(!peopleTouched)st.people=new Set(ppl);else st.people=new Set([...st.people].filter(p=>ppl.includes(p)));
@@ -123,6 +131,8 @@ const selPeople=()=>[...st.people].filter(p=>peopleFor(st.task).includes(p)).sor
 function gtFor(g,t,only){
  if(t.startsWith('Cube'))return g.half?cubePaths(g.half):[];
  if(!g.geometry||!g.raw)return [];
+ // The 3D trefoil reference was re-oriented in September; summer-build trials have no matching ground truth to draw.
+ if(t.startsWith('T3D')&&g.build&&g.build!=='current')return [];
  const tr=only||g.trials.find(r=>r.task===t);if(!tr||tr.frame!=='canonical')return [];
  return groundTruth({meta:tr.rec.meta},g.geometry,'canonical',0,ref3D).map(p=>({...p,points:p.points.map(q=>q.map(v=>v*1000))}));
 }
@@ -156,7 +166,7 @@ function renderViz(){
     const a=r.p.find(Boolean),z=[...r.p].reverse().find(Boolean);if(a&&z)traces.push({type:'scatter3d',mode:'markers',x:[a[0],z[0]],y:[a[2],z[2]],z:[a[1],z[1]],marker:{size:[7,6],symbol:['circle','square'],color:c,line:{color:'#fff',width:1.5}},legendgroup:'t'+r.i,showlegend:false,hovertemplate:'%{text}<extra></extra>',text:[`Trial ${r.i} start`,`Trial ${r.i} end`]});});
    if(t.startsWith('Cube')&&g.half){for(const [k,s] of meanPath(tr,g.half).entries())traces.push(line(s,{name:`Mean path of ${tr.length}`,legendgroup:'mean',showlegend:k===0,line:{color:'#6250d6',width:5},opacity:.9,hoverinfo:'skip'}));}
    const m=avg(tr.map(r=>r.mean)),all3=g.trials.filter(r=>r.task===t).sort((a,b)=>a.i-b.i);
-   const stat=one&&t==='Ellipse'?`aspect ${fmt(one.expected?.aspect,2)}: traced tilt ${fmt(one.shape?.slantDeg,1)}°, ${fmt(one.expected?.slantDeg,1)}° for a circle`:one?`${esc(one.rec?.cond||'')}${one.rec?.dir!=null?`, direction ${one.rec.dir>=0?'+':'−'}`:''}: ${m===null?'distance not recorded':`mean ${fmt(m)} mm`}`:m===null?'Distance not recorded':`mean ${fmt(m)} mm`;
+   const stat=one&&t==='Ellipse'?`aspect ${fmt(one.expected?.aspect,2)}: traced tilt ${fmt(one.shape?.slantDeg,1)}°, ${fmt(one.expected?.slantDeg,1)}° for a circle`:one?`${esc(one.rec?.cond||'')}${one.rec?.dir!=null?`, direction ${one.rec.dir>=0?'+':'−'}`:''}: ${m===null?'distance not recorded':`mean ${fmt(m)} mm`}`:t==='T2D'?'compared between trials, not with a target':m===null?'Distance not recorded':`mean ${fmt(m)} mm`;
    info=`<strong>${esc(TASKNAME[t])}</strong><span>${esc(pid)}, session ${g.n}${g.date?`, ${fmtDate(g.date)}`:''}</span><span>${one?`trial ${one.i} of ${all3.length}`:`${tr.length} trial${tr.length>1?'s':''}`}</span><span>${stat}</span>`;
    if(one)info+=`<span class="sessPick">Trial ${all3.map(x=>`<button type="button" class="chip mini${x===one?' sel':''}" data-trial="${esc(x.id)}">${x.i}</button>`).join('')}</span>`;
    const all=sessionsOf(pid,t);
@@ -233,7 +243,7 @@ function chartEllipsePeople(box,W){
 }
 function chartTrials(box){
  const t=st.task,pid=selPeople()[0],W=Math.max(320,box.clientWidth),Hh=chartH(box),m={l:40,r:16,t:14,b:30},g=[];
- if(t==='T2D'){const g0=chosenSession(pid,t);box.innerHTML=`<p class="cmpEmpty">${g0.trials.filter(x=>x.task==='T2D').length} main trials in ${esc(pid)} ${esc(g0.label)}. Depth agreement between every pair of trials is on the Main Experiment page.</p><p><button type="button" class="btn small" id="cmpOpenDrw">Open pair analysis for this session</button></p>`;$('cmpOpenDrw').onclick=()=>{hooks.onDrawings?.(g0.raw);};return;}
+ if(t==='T2D'){const g0=chosenSession(pid,t);box.innerHTML=`<p class="cmpEmpty">${g0.trials.filter(x=>x.task==='T2D').length} main trials in ${esc(pid)} session ${g0.n}. Depth agreement between every pair of trials is on the Main Experiment page.</p><p><button type="button" class="btn small" id="cmpOpenDrw">Open pair analysis for this session</button></p>`;$('cmpOpenDrw').onclick=()=>{hooks.onDrawings?.(g0.raw);};return;}
  if(t==='Ellipse'){const g0=chosenSession(pid,t),tr=g0.trials.filter(x=>x.task==='Ellipse'&&x.shape),x=i=>m.l+(i+.5)/tr.length*(W-m.l-m.r),y=v=>Hh-m.b-v/90*(Hh-m.t-m.b);
   for(let v=0;v<=90;v+=15)g.push(`<line class="grid" x1="${m.l}" x2="${W-m.r}" y1="${y(v)}" y2="${y(v)}"/><text class="tick" x="${m.l-6}" y="${y(v)+4}" text-anchor="end">${v}°</text>`);
   tr.forEach((r,i)=>{g.push(`<rect x="${x(i)-9}" y="${y(r.shape.slantDeg)}" width="18" height="${y(0)-y(r.shape.slantDeg)}" rx="3" fill="#2a78d6"/><line x1="${x(i)-12}" x2="${x(i)+12}" y1="${y(r.expected.slantDeg)}" y2="${y(r.expected.slantDeg)}" stroke="#1c2226" stroke-width="2"/><text class="tick" x="${x(i)}" y="${Hh-m.b+14}" text-anchor="middle">${r.i}</text>`);});
@@ -253,7 +263,7 @@ function chartGT(box){
  if(t.startsWith('Cube')&&tr.some(x=>x.edges)){
   const E=ENAME.map((n,e)=>({n,v:avg(tr.map(x=>x.edges?.[e]?.mean))})),mx=Math.ceil(Math.max(...E.map(e=>e.v||0))/5)*5||5,rh=22,Hh=E.length*rh+24,x=v=>130+v/mx*(W-180);
   E.forEach((e,k)=>{const yy=6+k*rh;g.push(`<text class="rlab" x="0" y="${yy+13}">${k+1} ${e.n}</text><rect x="130" y="${yy+3}" width="${Math.max(2,x(e.v||0)-130)}" height="14" rx="3" fill="${k===4?'#245c80':'#7fa3b8'}"/><text class="rval" x="${x(e.v||0)+6}" y="${yy+14}">${fmt(e.v)}</text>`);});
-  box.innerHTML=svgFrame(W,Hh)+g.join('')+`</svg><p class="note">Mean distance from each cube edge, mm, averaged over the ${tr.length} trials of ${esc(pid)} ${esc(g0.label)}. Edge 5 runs into depth.</p>`;return;}
+  box.innerHTML=svgFrame(W,Hh)+g.join('')+`</svg><p class="note">Mean distance from each cube edge, mm, averaged over the ${tr.length} trials of ${esc(pid)} session ${g0.n}. Edge 5 runs into depth.</p>`;return;}
  const ok=tr.filter(x=>Number.isFinite(x.mean)),Hh=chartH(box),m={l:40,r:16,t:14,b:30},ymax=Math.max(20,Math.ceil(Math.max(...ok.map(x=>x.p95??x.mean))/10)*10),x=i=>m.l+(i+.5)/ok.length*(W-m.l-m.r),y=v=>Hh-m.b-v/ymax*(Hh-m.t-m.b);
  axisY(g,ymax,y,m.l,m.r,W);
  ok.forEach((r,i)=>{g.push(`<rect x="${x(i)-9}" y="${y(r.mean)}" width="18" height="${y(0)-y(r.mean)}" rx="3" fill="#2a78d6"/>`);if(Number.isFinite(r.p95))g.push(`<line x1="${x(i)-9}" x2="${x(i)+9}" y1="${y(r.p95)}" y2="${y(r.p95)}" stroke="#1c2226" stroke-width="1.6"/>`);g.push(`<text class="tick" x="${x(i)}" y="${Hh-m.b+14}" text-anchor="middle">${esc(String(r.id).replace(/^.*_/,''))}</text>`);});
@@ -274,7 +284,6 @@ export function init(){
  document.addEventListener('click',e=>{if(!menu.hidden&&!menu.contains(e.target)&&e.target!==add){menu.hidden=true;add.setAttribute('aria-expanded','false');}});
  $('dsFiles').onchange=e=>{menu.hidden=true;if(e.target.files.length)addFiles(e.target.files,null);e.target.value='';};
  $('dsFolder').onchange=e=>{menu.hidden=true;const f=[...e.target.files];if(f.length)addFiles(f,(f[0].webkitRelativePath||'').split('/')[0]||null);e.target.value='';};
- $('dsBuiltin').onclick=()=>{menu.hidden=true;addBuiltin().catch(err=>status(err.message,true));};
  document.querySelectorAll('.card .fold').forEach(b=>b.onclick=()=>{const body=$(b.getAttribute('aria-controls')),open=b.getAttribute('aria-expanded')==='true';body.hidden=open;b.setAttribute('aria-expanded',String(!open));b.classList.toggle('closed',open);});
  const zone=$('dash');
  for(const ev of ['dragenter','dragover'])zone.addEventListener(ev,e=>{if([...e.dataTransfer.types].includes('Files')){e.preventDefault();$('cardDatasets').classList.add('over');}});
