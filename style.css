@@ -625,3 +625,18 @@ body[data-page=overview] #status{display:none}
 body[data-page=overview] .content{padding-bottom:var(--m)}
 .dash{padding-top:0}
 @media (max-width:640px){:root{--m:16px}}
+
+/* 3D view controls */
+.vizHead{flex-direction:column;align-items:stretch;gap:6px}
+.vizInfo{display:flex;flex-wrap:wrap;align-items:baseline;gap:4px 16px}
+.vizCtl{display:flex;flex-wrap:wrap;align-items:center;gap:6px 14px;font-size:.78rem}
+.segG{display:inline-flex;border:1px solid var(--rule-strong);border-radius:6px;overflow:hidden;background:var(--surface)}
+.segB{border:0;background:none;padding:3px 9px;font-size:.76rem;color:var(--text);cursor:pointer}
+.segB+.segB{border-left:1px solid var(--rule-strong)}
+.segB.on{background:var(--a);color:#fff}
+.vizCtl .check{font-size:.78rem;gap:6px}
+.meanKey{display:inline-block;width:16px;height:4px;border-radius:2px;background:#6250d6}
+.cmpChart{display:flex;flex-direction:column;gap:6px}
+.cmpCap h3{font-size:.84rem;font-weight:500;color:var(--ink)}
+.cmpCap p{font-size:.74rem;color:var(--muted);margin-top:2px;max-width:90ch}
+.cmpFig{min-height:0}

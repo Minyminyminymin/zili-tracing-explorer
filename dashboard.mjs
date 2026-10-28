@@ -16,7 +16,7 @@ const TASKNAME=Object.fromEntries(GROUPS.flatMap(([,t])=>t.map(([k,,n])=>[k,n]))
 const keyOf=r=>r.task==='Cube'?(r.cond==='Rotating'?'Cube_R':'Cube_S'):r.task==='Trefoil3D'?(r.cond==='Rotating'?'T3D_R':'T3D_S'):r.task==='Trefoil2D'?'T2D':r.task;
 const PCOL=['#2a78d6','#eb6834','#1baf7a','#eda100','#e87ba4','#008300','#6250d6','#e34948'];
 
-const st={datasets:[],task:null,people:new Set(),session:null,trial:null,cmp:'pp'};
+const st={datasets:[],task:null,people:new Set(),session:null,trial:null,cmp:'pp',show:'raw',pick:null,mean:true};
 // Ellipse and sphere trials each have their own target (aspect ratio, equator or outline), so they are shown one at a time.
 const PER_TRIAL=new Set(['Ellipse','Sphere']);
 let groups=[],ref3D=null,peopleTouched=false;
@@ -136,11 +136,26 @@ function gtFor(g,t,only){
  const tr=only||g.trials.find(r=>r.task===t);if(!tr||tr.frame!=='canonical')return [];
  return groundTruth({meta:tr.rec.meta},g.geometry,'canonical',0,ref3D).map(p=>({...p,points:p.points.map(q=>q.map(v=>v*1000))}));
 }
-function nearestEdge(p,half){let best=[Infinity,0,0];TRACED.forEach(([a,b],e)=>{const A=CUBE[a].map(v=>v*half),B=CUBE[b].map(v=>v*half),L=2*half,u=B.map((v,k)=>(v-A[k])/L);let s=u.reduce((x,v,k)=>x+v*(p[k]-A[k]),0);s=Math.max(0,Math.min(L,s));const q=A.map((v,k)=>v+u[k]*s),d=Math.hypot(...q.map((v,k)=>v-p[k]));if(d<best[0])best=[d,e,s];});return best;}
-function meanPath(trials,half){
- const BIN=2*half/24,acc=TRACED.map(()=>Array.from({length:24},()=>[0,0,0,0])),out=[];
- for(const t of trials)for(const p of t.p){if(!p)continue;const [d,e,s]=nearestEdge(p,half);if(d>half*.42)continue;const c=acc[e][Math.min(23,Math.floor(s/BIN))];c[0]+=p[0];c[1]+=p[1];c[2]+=p[2];c[3]++;}
- for(const bins of acc){let seg=[];for(const c of bins){if(c[3]<3){if(seg.length)out.push(seg);seg=[];continue;}seg.push([c[0]/c[3],c[1]/c[3],c[2]/c[3]]);}if(seg.length)out.push(seg);}
+// Paths summarised along the ground truth: each sample goes to its nearest point on the ground-truth curve,
+// the curve is cut into equal-length bins, and each bin keeps the median (per trial) or mean (across trials) position.
+// 2D trefoil and ellipse are matched on X–Y only, because depth is what the participant adds.
+const XY_ONLY=new Set(['T2D','Ellipse']);
+function track(gt){
+ const P=gt.filter(p=>p.kind==='ground');let total=0;
+ const paths=P.map(p=>{const s=[0];for(let i=1;i<p.points.length;i++)s.push(s[i-1]+Math.hypot(...p.points[i].map((v,k)=>v-p.points[i-1][k])));total+=s.at(-1);return {pts:p.points,s};});
+ return {paths,total};
+}
+function binnedPaths(trials,gt,t,{bins,minN,stat}){
+ const T=track(gt);if(!T.total)return [];
+ const L=T.total/bins,step=L/4,xy=XY_ONLY.has(t),dense=[];
+ T.paths.forEach((p,pi)=>{for(let i=1;i<p.pts.length;i++){const a=p.pts[i-1],b=p.pts[i],len=p.s[i]-p.s[i-1],n=Math.max(1,Math.ceil(len/step));for(let k=0;k<n;k++){const f=k/n;dense.push({q:a.map((v,j)=>v+(b[j]-v)*f),pi,s:p.s[i-1]+len*f});}}});
+ const all=dense.map(d=>d.q),ext=Math.max(...[0,1,2].map(k=>Math.max(...all.map(q=>q[k]))-Math.min(...all.map(q=>q[k])))),thr=t.startsWith('Cube')?ext*.21:ext*.35;
+ const acc=T.paths.map(p=>Array.from({length:Math.ceil(p.s.at(-1)/L)+1},()=>[]));
+ for(const tr of trials)for(const p of tr.p){if(!p)continue;let bd=Infinity,bi=-1;for(let i=0;i<dense.length;i++){const q=dense[i].q,d=xy?Math.hypot(p[0]-q[0],p[1]-q[1]):Math.hypot(p[0]-q[0],p[1]-q[1],p[2]-q[2]);if(d<bd){bd=d;bi=i;}}
+  if(bd>thr)continue;const d=dense[bi];acc[d.pi][Math.floor(d.s/L)].push(p);}
+ const mid=a=>{const b=[...a].sort((x,y)=>x-y),m=b.length>>1;return b.length%2?b[m]:(b[m-1]+b[m])/2;};
+ const out=[];
+ for(const binsP of acc){let seg=[];for(const c of binsP){if(c.length<minN){if(seg.length>1)out.push(seg);seg=[];continue;}seg.push([0,1,2].map(k=>stat==='median'?mid(c.map(p=>p[k])):c.reduce((x,p)=>x+p[k],0)/c.length));}if(seg.length>1)out.push(seg);}
  return out;
 }
 const line=(pts,o)=>({type:'scatter3d',mode:'lines',x:pts.map(p=>p?p[0]:null),y:pts.map(p=>p?p[2]:null),z:pts.map(p=>p?p[1]:null),...o});
@@ -151,7 +166,7 @@ function renderViz(){
  const P=selPeople();if(!P.length){empty.textContent='Select at least one participant.';empty.hidden=false;plot.hidden=true;head.innerHTML='';return;}
  if(PER_TRIAL.has(st.task)&&P.length>1){empty.textContent=`Each ${TASKNAME[st.task].toLowerCase()} trial has its own target. Select one participant to see their trials.`;empty.hidden=false;plot.hidden=true;head.innerHTML='';return;}
  empty.hidden=true;plot.hidden=false;
- const traces=[],t=st.task,single=P.length===1;let gtDone=false,info='';
+ const traces=[],t=st.task,single=P.length===1;let gtDone=false,info='',ctrl='';
  // Cubes differ between builds (summer 240 mm, October 144 mm); draw every path on the first participant's cube.
  const refHalf=t.startsWith('Cube')?chosenSession(P[0],t)?.half:null,halves=new Set(refHalf?P.map(p=>Math.round((chosenSession(p,t)?.half||0)*2)).filter(Boolean):[]);
  const sc=g=>refHalf&&g.half&&Math.abs(g.half/refHalf-1)>.01?refHalf/g.half:1,scaleP=(pts,k)=>k===1?pts:pts.map(p=>p&&p.map(v=>v*k));
@@ -162,24 +177,38 @@ function renderViz(){
    if(t.startsWith('Cube')&&g.half){const mids=TRACED.map(([a,b])=>CUBE[a].map((v,k)=>(v+CUBE[b][k])/2*g.half*1.14));traces.push({type:'scatter3d',mode:'text',x:mids.map(m=>m[0]),y:mids.map(m=>m[2]),z:mids.map(m=>m[1]),text:mids.map((_,i)=>String(i+1)),textfont:{size:13,color:'#1c2226'},hoverinfo:'skip',showlegend:false});}
    gtDone=true;}
   if(single){
-   tr.forEach((r,k)=>{const c=PCOL[k%PCOL.length];traces.push(line(r.p,{name:`Trial ${r.i}${Number.isFinite(r.mean)?` (${fmt(r.mean)} mm)`:''}`,legendgroup:'t'+r.i,line:{color:c,width:2.5},opacity:.85,hovertemplate:`Trial ${r.i}<extra></extra>`}));
-    const a=r.p.find(Boolean),z=[...r.p].reverse().find(Boolean);if(a&&z)traces.push({type:'scatter3d',mode:'markers',x:[a[0],z[0]],y:[a[2],z[2]],z:[a[1],z[1]],marker:{size:[7,6],symbol:['circle','square'],color:c,line:{color:'#fff',width:1.5}},legendgroup:'t'+r.i,showlegend:false,hovertemplate:'%{text}<extra></extra>',text:[`Trial ${r.i} start`,`Trial ${r.i} end`]});});
-   if(t.startsWith('Cube')&&g.half){for(const [k,s] of meanPath(tr,g.half).entries())traces.push(line(s,{name:`Mean path of ${tr.length}`,legendgroup:'mean',showlegend:k===0,line:{color:'#6250d6',width:5},opacity:.9,hoverinfo:'skip'}));}
+   const gt=gtFor(g,t,one),pickT=!one&&st.pick?tr.filter(r=>r.id===st.pick):[],shown=pickT.length?pickT:tr,median=st.show==='median'&&gt.length;
+   shown.forEach(r=>{const k=tr.indexOf(r),c=PCOL[k%PCOL.length],nm=`Trial ${r.i}${Number.isFinite(r.mean)?` (${fmt(r.mean)} mm)`:''}`;
+    if(median){traces.push(line(r.p,{name:nm+', raw',legendgroup:'t'+r.i,showlegend:false,line:{color:c,width:1.5},opacity:.18,hoverinfo:'skip'}));
+     binnedPaths([r],gt,t,{bins:100,minN:2,stat:'median'}).forEach((sg,j)=>traces.push(line(sg,{name:nm+', median',legendgroup:'t'+r.i,showlegend:j===0,line:{color:c,width:4},hovertemplate:`Trial ${r.i}, median path<extra></extra>`})));}
+    else traces.push(line(r.p,{name:nm,legendgroup:'t'+r.i,line:{color:c,width:2.5},opacity:.85,hovertemplate:`Trial ${r.i}<extra></extra>`}));
+    const a=r.p.find(Boolean),z=[...r.p].reverse().find(Boolean);if(a&&z)traces.push({type:'scatter3d',mode:'markers',x:[a[0],z[0]],y:[a[2],z[2]],z:[a[1],z[1]],marker:{size:[8,7],symbol:['circle','square'],color:c,line:{color:'#fff',width:1.5}},legendgroup:'t'+r.i,showlegend:false,hovertemplate:'%{text}<extra></extra>',text:[`Trial ${r.i} start`,`Trial ${r.i} end`]});});
+   if(st.mean&&shown.length>1&&gt.length)binnedPaths(shown,gt,t,{bins:200,minN:3,stat:'mean'}).forEach((sg,j)=>traces.push(line(sg,{name:`Mean path (${shown.length} trials)`,legendgroup:'mean',showlegend:j===0,line:{color:'#6250d6',width:6},opacity:.9,hoverinfo:'skip'})));
    const m=avg(tr.map(r=>r.mean)),all3=g.trials.filter(r=>r.task===t).sort((a,b)=>a.i-b.i);
    const stat=one&&t==='Ellipse'?`aspect ${fmt(one.expected?.aspect,2)}: traced tilt ${fmt(one.shape?.slantDeg,1)}°, ${fmt(one.expected?.slantDeg,1)}° for a circle`:one?`${esc(one.rec?.cond||'')}${one.rec?.dir!=null?`, direction ${one.rec.dir>=0?'+':'−'}`:''}: ${m===null?'distance not recorded':`mean ${fmt(m)} mm`}`:t==='T2D'?'compared between trials, not with a target':m===null?'Distance not recorded':`mean ${fmt(m)} mm`;
    info=`<strong>${esc(TASKNAME[t])}</strong><span>${esc(pid)}, session ${g.n}${g.date?`, ${fmtDate(g.date)}`:''}</span><span>${one?`trial ${one.i} of ${all3.length}`:`${tr.length} trial${tr.length>1?'s':''}`}</span><span>${stat}</span>`;
    if(one)info+=`<span class="sessPick">Trial ${all3.map(x=>`<button type="button" class="chip mini${x===one?' sel':''}" data-trial="${esc(x.id)}">${x.i}</button>`).join('')}</span>`;
+   const segB=(k,l,on,attr)=>`<button type="button" class="segB${on?' on':''}" ${attr}="${k}" aria-pressed="${on}">${l}</button>`;
+   ctrl=`<span class="vizCtl"><span class="segG" role="group" aria-label="Path">${segB('raw','Raw trajectory',st.show==='raw','data-show')}${segB('median','Median per trial',st.show==='median','data-show')}</span>`+
+    (one?'':`<span class="segG" role="group" aria-label="Trials">${segB('','All trials',!st.pick||!tr.some(r=>r.id===st.pick),'data-pick')}${tr.map(r=>segB(r.id,'Trial '+r.i,st.pick===r.id,'data-pick')).join('')}</span>`)+
+    (!one&&tr.length>1?`<label class="check"><input type="checkbox" id="vizMean"${st.mean?' checked':''}> <span class="meanKey"></span>Mean path</label>`:'')+
+    `<span class="dim">● start&nbsp;&nbsp;■ end</span></span>`;
    const all=sessionsOf(pid,t);
    if(all.length>1)info+=`<span class="sessPick">Session ${all.map(x=>`<button type="button" class="chip mini${x===g?' sel':''}" data-sess="${x.key}">${x.n}</button>`).join('')}</span>`;
   }else{
    const c=PCOL[pi%PCOL.length];
-   if(t.startsWith('Cube')&&g.half){for(const [k,s] of meanPath(tr,g.half).entries())traces.push(line(scaleP(s,sc(g)),{name:pid+(sc(g)!==1?' (scaled)':''),legendgroup:pid,showlegend:k===0,line:{color:c,width:4}}));}
-   else tr.forEach((r,k)=>traces.push(line(r.p,{name:pid,legendgroup:pid,showlegend:k===0,line:{color:c,width:2},opacity:.6})));
+   const gt=gtFor(g,t,null);
+   if(st.show==='median'&&gt.length)binnedPaths(tr,gt,t,{bins:200,minN:3,stat:'mean'}).forEach((sg,k)=>traces.push(line(scaleP(sg,sc(g)),{name:pid+' mean path'+(sc(g)!==1?' (scaled)':''),legendgroup:pid,showlegend:k===0,line:{color:c,width:4}})));
+   else tr.forEach((r,k)=>traces.push(line(scaleP(r.p,sc(g)),{name:pid,legendgroup:pid,showlegend:k===0,line:{color:c,width:2},opacity:.6})));
   }
  }
- if(!single)info=`<strong>${esc(TASKNAME[t])}</strong><span>${P.length} participants, latest session each</span><span>${t.startsWith('Cube')?'Mean path per participant':'All trials, one colour per participant'}</span>${halves.size>1?`<span class="warn">Cube sizes differ between datasets (${[...halves].map(h=>h+' mm').join(', ')}); paths are scaled to a ${Math.round(refHalf*2)} mm cube.</span>`:''}`;
- head.innerHTML=info;
- head.querySelectorAll('[data-sess]').forEach(b=>b.onclick=()=>{st.session=b.dataset.sess;st.trial=null;render();});
+ if(!single){ctrl=`<span class="vizCtl"><span class="segG" role="group" aria-label="Path"><button type="button" class="segB${st.show==='raw'?' on':''}" data-show="raw" aria-pressed="${st.show==='raw'}">Raw trajectory</button><button type="button" class="segB${st.show==='median'?' on':''}" data-show="median" aria-pressed="${st.show==='median'}">Mean path per participant</button></span></span>`;}
+ if(!single)info=`<strong>${esc(TASKNAME[t])}</strong><span>${P.length} participants, latest session each</span><span>${st.show==='median'?'Mean path per participant':'All trials, one colour per participant'}</span>${halves.size>1?`<span class="warn">Cube sizes differ between datasets (${[...halves].map(h=>h+' mm').join(', ')}); paths are scaled to a ${Math.round(refHalf*2)} mm cube.</span>`:''}`;
+ head.innerHTML=`<div class="vizInfo">${info}</div>${ctrl}`;
+ head.querySelectorAll('[data-show]').forEach(b=>b.onclick=()=>{st.show=b.dataset.show;renderViz();});
+ head.querySelectorAll('[data-pick]').forEach(b=>b.onclick=()=>{st.pick=b.dataset.pick||null;renderViz();});
+ $('vizMean')&&($('vizMean').onchange=e=>{st.mean=e.target.checked;renderViz();});
+ head.querySelectorAll('[data-sess]').forEach(b=>b.onclick=()=>{st.session=b.dataset.sess;st.trial=null;st.pick=null;render();});
  head.querySelectorAll('[data-trial]').forEach(b=>b.onclick=()=>{st.trial=b.dataset.trial;render();});
  const ax=n=>({title:{text:n,font:{size:12}},gridcolor:'#e6e9e9',zerolinecolor:'#d7dcdc',color:'#5d696f',backgroundcolor:'rgba(0,0,0,0)',showspikes:false});
  const layout={paper_bgcolor:'rgba(0,0,0,0)',font:{family:'Inter, system-ui, sans-serif',size:12,color:'#1c2226'},margin:{l:0,r:0,t:0,b:0},showlegend:true,legend:{x:0,y:1,bgcolor:'rgba(255,255,255,.7)',font:{size:11}},
@@ -199,7 +228,8 @@ function cmpState(){
  r.pp=nSel<2?{ok:false,why:peopleFor(t).length>1?'Select two or more participants.':'Only one participant has this task.'}:t==='Ellipse'?{ok:true}:t==='T2D'?{ok:false,why:'Drawing consistency is compared within a session; open Main Experiment.'}:{ok:n>1,why:n?`Only ${n} participant has distances for this task.`:'TargetError is not recorded for this task.'};
  const g=P.length===1?chosenSession(P[0],t):null,trials=g?g.trials.filter(x=>x.task===t):[];
  r.tt=P.length!==1?{ok:false,why:'Select one participant.'}:t==='T2D'?{ok:trials.length>1,why:'Needs two main trials.',link:true}:{ok:trials.some(x=>Number.isFinite(x.mean))||t==='Ellipse',why:'TargetError is not recorded for these trials.'};
- r.tg=P.length!==1?{ok:false,why:'Select one participant.'}:t==='T2D'?{ok:false,why:'The main task has no target depth; drawings are compared with each other.'}:{ok:t==='Ellipse'?trials.some(x=>x.shape):trials.some(x=>Number.isFinite(x.mean)),why:t==='T3D_R'?'TargetError is empty for rotating 3D trefoil trials.':'No distance in these trials.'};
+ const gp=P.map(p=>chosenSession(p,t)).filter(Boolean),tt=gp.flatMap(x=>x.trials.filter(q=>q.task===t));
+ r.tg=!P.length?{ok:false,why:'Select a participant.'}:t==='T2D'?{ok:gp.some(x=>gtFor(x,t,null).length),why:'No ground truth for these trials.'}:{ok:t==='Ellipse'?tt.some(x=>x.shape):tt.some(x=>Number.isFinite(x.mean)),why:t==='T3D_R'?'TargetError is empty for rotating 3D trefoil trials.':'No distance in these trials.'};
  return r;
 }
 function renderCompare(){
@@ -209,10 +239,18 @@ function renderCompare(){
  $('cmpList').querySelectorAll('[data-cmp]').forEach(b=>b.onclick=()=>{st.cmp=b.dataset.cmp;renderCompare();});
  const box=$('cmpChart');
  if(!S[st.cmp]?.ok){box.innerHTML=`<p class="cmpEmpty">${esc(st.task?'Nothing to compare with the current selection.':'Pick a task to compare.')}</p>`;return;}
- if(st.cmp==='pp')chartPeople(box);else if(st.cmp==='tt')chartTrials(box);else chartGT(box);
+ box.innerHTML='<div class="cmpCap"><h3></h3><p></p></div><div class="cmpFig chart"></div>';
+ const fig=box.querySelector('.cmpFig'),t=st.task,P=selPeople(),many=P.length>1;
+ const TITLE={pp:'Mean distance, participant by participant',tt:t==='Ellipse'?'Traced tilt, trial by trial':t==='T2D'?'Main trials in this session':'Distance of every trial, in order',
+  tg:t.startsWith('Cube')?'Distance from each cube edge':t==='Ellipse'?'Traced tilt against the tilt a circle would need':t==='T2D'?'X–Y distance from the 2D trefoil, per trial':'Distance to the ground truth, per trial'};
+ box.querySelector('.cmpCap h3').textContent=TITLE[st.cmp];
+ if(st.cmp==='pp')chartPeople(fig);else if(st.cmp==='tt')chartTrials(fig);else chartGT(fig);
+ // The chart's own note becomes the description above it.
+ const note=fig.querySelector('p.note');box.querySelector('.cmpCap h3').textContent=TITLE[st.cmp];box.querySelector('.cmpCap p').innerHTML=note?note.innerHTML:'';note?.remove();void many;
 }
 // Charts fill the comparison block's height so the page never needs to scroll.
-const chartH=box=>Math.max(130,Math.min(320,(box.clientHeight||230)-30));
+// Height left for the chart under its title and description (about two lines).
+const chartH=box=>{const h=box.classList.contains('cmpFig')?box.parentElement.clientHeight-54:(box.clientHeight||230);return Math.max(100,Math.min(300,h-22));};
 function svgFrame(W,Hh){return `<svg viewBox="0 0 ${W} ${Hh}" width="${W}" height="${Hh}" style="max-width:100%" role="img">`;}
 function axisY(g,ymax,y,l,r,W,unit='mm'){for(let v=0;v<=ymax;v+=ymax>30?10:5)g.push(`<line class="grid" x1="${l}" x2="${W-r}" y1="${y(v)}" y2="${y(v)}"/><text class="tick" x="${l-6}" y="${y(v)+4}" text-anchor="end">${v}</text>`);g.push(`<text class="axis" x="4" y="10">${unit}</text>`);}
 function chartPeople(box){
@@ -246,7 +284,7 @@ function chartTrials(box){
  if(t==='T2D'){const g0=chosenSession(pid,t);box.innerHTML=`<p class="cmpEmpty">${g0.trials.filter(x=>x.task==='T2D').length} main trials in ${esc(pid)} session ${g0.n}. Depth agreement between every pair of trials is on the Main Experiment page.</p><p><button type="button" class="btn small" id="cmpOpenDrw">Open pair analysis for this session</button></p>`;$('cmpOpenDrw').onclick=()=>{hooks.onDrawings?.(g0.raw);};return;}
  if(t==='Ellipse'){const g0=chosenSession(pid,t),tr=g0.trials.filter(x=>x.task==='Ellipse'&&x.shape),x=i=>m.l+(i+.5)/tr.length*(W-m.l-m.r),y=v=>Hh-m.b-v/90*(Hh-m.t-m.b);
   for(let v=0;v<=90;v+=15)g.push(`<line class="grid" x1="${m.l}" x2="${W-m.r}" y1="${y(v)}" y2="${y(v)}"/><text class="tick" x="${m.l-6}" y="${y(v)+4}" text-anchor="end">${v}°</text>`);
-  tr.forEach((r,i)=>{g.push(`<rect x="${x(i)-9}" y="${y(r.shape.slantDeg)}" width="18" height="${y(0)-y(r.shape.slantDeg)}" rx="3" fill="#2a78d6"/><line x1="${x(i)-12}" x2="${x(i)+12}" y1="${y(r.expected.slantDeg)}" y2="${y(r.expected.slantDeg)}" stroke="#1c2226" stroke-width="2"/><text class="tick" x="${x(i)}" y="${Hh-m.b+14}" text-anchor="middle">${r.i}</text>`);});
+  tr.forEach((r,i)=>{g.push(`<rect x="${x(i)-4}" y="${y(r.shape.slantDeg)}" width="8" height="${y(0)-y(r.shape.slantDeg)}" rx="3" fill="#2a78d6"/><line x1="${x(i)-8}" x2="${x(i)+8}" y1="${y(r.expected.slantDeg)}" y2="${y(r.expected.slantDeg)}" stroke="#1c2226" stroke-width="2"/><text class="tick" x="${x(i)}" y="${Hh-m.b+14}" text-anchor="middle">${r.i}</text>`);});
   box.innerHTML=svgFrame(W,Hh)+g.join('')+'</svg><p class="note">Bars: traced tilt per trial. Black line: tilt a circle would need.</p>';return;}
  const S=sessionsOf(pid,t),pts=[];S.forEach(s=>s.trials.filter(x=>x.task===t&&Number.isFinite(x.mean)).forEach((r,k,a)=>pts.push({o:s.n,xo:s.n-1+(k+.5)/a.length,v:r.mean,cur:s===chosenSession(pid,t),i:r.i})));
  const maxO=Math.max(1,...S.map(s=>s.n)),ymax=Math.max(20,Math.ceil(Math.max(...pts.map(p=>p.v))/10)*10),x=v=>m.l+v/maxO*(W-m.l-m.r),y=v=>Hh-m.b-v/ymax*(Hh-m.t-m.b);
@@ -257,17 +295,42 @@ function chartTrials(box){
  box.innerHTML=svgFrame(W,Hh)+g.join('')+`</svg><p class="note">Mean distance of every ${TASKNAME[t].toLowerCase()} trial for ${esc(pid)}${maxO>1?', in session order. Blue: the session shown above.':'.'}</p>`;
 }
 const ENAME=['Front bottom','Front right','Front top','Front left','Connecting','Back bottom','Back right','Back top','Back left'];
+// Main 2D trefoil: depth is free, so the comparison with the ground truth is the X–Y distance to the curve.
+function xyDistance(r,gt){
+ if(r._xy)return r._xy;const pts=[];
+ for(const p of gt.filter(q=>q.kind==='ground'))for(let i=1;i<p.points.length;i++){const a=p.points[i-1],b=p.points[i],n=Math.max(1,Math.ceil(Math.hypot(b[0]-a[0],b[1]-a[1])/1));for(let k=0;k<n;k++)pts.push([a[0]+(b[0]-a[0])*k/n,a[1]+(b[1]-a[1])*k/n]);}
+ const d=r.p.filter(Boolean).map(p=>{let m=Infinity;for(const q of pts){const v=Math.hypot(p[0]-q[0],p[1]-q[1]);if(v<m)m=v;}return m;}).sort((x,y)=>x-y);
+ return r._xy=d.length?{mean:d.reduce((x,y)=>x+y,0)/d.length,p95:d[Math.floor(d.length*.95)]}:{mean:null,p95:null};
+}
+function gtValues(g0,t){
+ const tr=g0.trials.filter(x=>x.task===t).sort((a,b)=>a.i-b.i);
+ if(t==='T2D'){const gt=gtFor(g0,t,null);return tr.map(r=>({r,...xyDistance(r,gt)}));}
+ return tr.map(r=>({r,mean:r.mean,p95:r.p95}));
+}
 function chartGT(box){
- const t=st.task,pid=selPeople()[0],g0=chosenSession(pid,t),tr=g0.trials.filter(x=>x.task===t),W=Math.max(320,box.clientWidth),g=[];
- if(t==='Ellipse'){chartTrials(box);return;}
- if(t.startsWith('Cube')&&tr.some(x=>x.edges)){
-  const E=ENAME.map((n,e)=>({n,v:avg(tr.map(x=>x.edges?.[e]?.mean))})),mx=Math.ceil(Math.max(...E.map(e=>e.v||0))/5)*5||5,rh=22,Hh=E.length*rh+24,x=v=>130+v/mx*(W-180);
-  E.forEach((e,k)=>{const yy=6+k*rh;g.push(`<text class="rlab" x="0" y="${yy+13}">${k+1} ${e.n}</text><rect x="130" y="${yy+3}" width="${Math.max(2,x(e.v||0)-130)}" height="14" rx="3" fill="${k===4?'#245c80':'#7fa3b8'}"/><text class="rval" x="${x(e.v||0)+6}" y="${yy+14}">${fmt(e.v)}</text>`);});
-  box.innerHTML=svgFrame(W,Hh)+g.join('')+`</svg><p class="note">Mean distance from each cube edge, mm, averaged over the ${tr.length} trials of ${esc(pid)} session ${g0.n}. Edge 5 runs into depth.</p>`;return;}
- const ok=tr.filter(x=>Number.isFinite(x.mean)),Hh=chartH(box),m={l:40,r:16,t:14,b:30},ymax=Math.max(20,Math.ceil(Math.max(...ok.map(x=>x.p95??x.mean))/10)*10),x=i=>m.l+(i+.5)/ok.length*(W-m.l-m.r),y=v=>Hh-m.b-v/ymax*(Hh-m.t-m.b);
- axisY(g,ymax,y,m.l,m.r,W);
- ok.forEach((r,i)=>{g.push(`<rect x="${x(i)-9}" y="${y(r.mean)}" width="18" height="${y(0)-y(r.mean)}" rx="3" fill="#2a78d6"/>`);if(Number.isFinite(r.p95))g.push(`<line x1="${x(i)-9}" x2="${x(i)+9}" y1="${y(r.p95)}" y2="${y(r.p95)}" stroke="#1c2226" stroke-width="1.6"/>`);g.push(`<text class="tick" x="${x(i)}" y="${Hh-m.b+14}" text-anchor="middle">${esc(String(r.id).replace(/^.*_/,''))}</text>`);});
- box.innerHTML=svgFrame(W,Hh)+g.join('')+`</svg><p class="note">Bars: mean distance to the ground truth per trial, mm. Tick: 95th percentile.</p>`;
+ const t=st.task,P=selPeople(),W=Math.max(320,box.clientWidth),g=[],unit=t==='T2D'?'X–Y distance to the 2D trefoil':'Distance to the ground truth';
+ if(t==='Ellipse'){if(P.length===1)chartTrials(box);else chartEllipsePeople(box,W);return;}
+ const col=p=>PCOL[peopleFor(t).indexOf(p)%PCOL.length];
+ if(t.startsWith('Cube')){
+  const rows=P.map(p=>{const g0=chosenSession(p,t),tr=g0.trials.filter(x=>x.task===t);return {p,g0,v:ENAME.map((_,e)=>avg(tr.map(x=>x.edges?.[e]?.mean)))};}).filter(x=>x.v.some(Number.isFinite));
+  if(rows.length){
+   const mx=Math.ceil(Math.max(...rows.flatMap(x=>x.v.filter(Number.isFinite)))/5)*5||5,rh=Math.max(13,Math.min(22,(chartH(box)-18)/9)),Hh=9*rh+20,x=v=>140+v/mx*(W-190);
+   for(let v=0;v<=mx;v+=mx>20?10:5)g.push(`<line class="grid" x1="${x(v)}" x2="${x(v)}" y1="2" y2="${Hh-20}"/><text class="tick" x="${x(v)}" y="${Hh-6}" text-anchor="middle">${v}</text>`);
+   ENAME.forEach((n,e)=>{const yy=6+e*rh;g.push(`<text class="rlab" x="0" y="${yy+11}">${e+1} ${n}</text>`);
+    if(rows.length===1){const v=rows[0].v[e];g.push(`<rect x="140" y="${yy+7-3}" width="${Math.max(2,x(v||0)-140)}" height="6" rx="3" fill="${e===4?'#245c80':'#7fa3b8'}"/><text class="rval" x="${x(v||0)+6}" y="${yy+11}">${fmt(v)}</text>`);}
+    else rows.forEach(r=>{const v=r.v[e];if(Number.isFinite(v))g.push(`<circle cx="${x(v)}" cy="${yy+7}" r="4.5" fill="${col(r.p)}"><title>${esc(r.p)}, edge ${e+1}: ${fmt(v)} mm</title></circle>`);});});
+   const key=rows.length>1?`<ul class="legend static">${rows.map(r=>`<li><i style="background:${col(r.p)};border-radius:50%"></i>${esc(r.p)}</li>`).join('')}</ul>`:'';
+   box.innerHTML=svgFrame(W,Hh)+g.join('')+`</svg>${key}<p class="note">Mean distance from each cube edge, mm${rows.length===1?`, over the trials of ${esc(rows[0].p)} session ${rows[0].g0.n}`:', latest session of each participant'}. Edge 5 runs into depth.</p>`;return;}
+ }
+ if(P.length===1){
+  const g0=chosenSession(P[0],t),ok=gtValues(g0,t).filter(x=>Number.isFinite(x.mean)),Hh=chartH(box),m={l:40,r:16,t:14,b:30},ymax=Math.max(10,Math.ceil(Math.max(...ok.map(x=>x.p95??x.mean))/10)*10),x=i=>m.l+(i+.5)/ok.length*(W-m.l-m.r),y=v=>Hh-m.b-v/ymax*(Hh-m.t-m.b);
+  axisY(g,ymax,y,m.l,m.r,W);
+  ok.forEach((d,i)=>{g.push(`<rect x="${x(i)-4}" y="${y(d.mean)}" width="8" height="${y(0)-y(d.mean)}" rx="3" fill="#2a78d6"><title>Trial ${d.r.i}: ${fmt(d.mean)} mm</title></rect>`);if(Number.isFinite(d.p95))g.push(`<line x1="${x(i)-7}" x2="${x(i)+7}" y1="${y(d.p95)}" y2="${y(d.p95)}" stroke="#1c2226" stroke-width="1.6"/>`);g.push(`<text class="tick" x="${x(i)}" y="${Hh-m.b+14}" text-anchor="middle">${d.r.i}</text>`);});
+  box.innerHTML=svgFrame(W,Hh)+g.join('')+`</svg><p class="note">Bars: ${unit.toLowerCase()} per trial, mm. Tick: 95th percentile. ${esc(P[0])} session ${g0.n}.</p>`;return;}
+ const rows=P.map(p=>({p,v:gtValues(chosenSession(p,t),t).map(d=>d.mean).filter(Number.isFinite)})).filter(x=>x.v.length),mx=Math.max(10,Math.ceil(Math.max(...rows.flatMap(x=>x.v))/10)*10),rh=26,Hh=rows.length*rh+30,x=v=>70+v/mx*(W-110);
+ for(let v=0;v<=mx;v+=mx>30?10:5)g.push(`<line class="grid" x1="${x(v)}" x2="${x(v)}" y1="4" y2="${Hh-20}"/><text class="tick" x="${x(v)}" y="${Hh-6}" text-anchor="middle">${v}</text>`);
+ rows.sort((a,b)=>avg(a.v)-avg(b.v)).forEach((r,k)=>{const yy=14+k*rh,c=col(r.p),m=avg(r.v);g.push(`<text class="rlab" x="0" y="${yy+4}">${esc(r.p)}</text>`);for(const v of r.v)g.push(`<circle cx="${x(v)}" cy="${yy}" r="3.5" fill="${c}" opacity=".55"/>`);g.push(`<line x1="${x(m)}" x2="${x(m)}" y1="${yy-8}" y2="${yy+8}" stroke="${c}" stroke-width="2.5"/><text class="rval" x="${W-8}" y="${yy+4}" text-anchor="end">${fmt(m)}</text>`);});
+ box.innerHTML=svgFrame(W,Hh)+g.join('')+`</svg><p class="note">${unit}, mm: dots are trials, the bar is the participant's mean. Latest session of each participant.</p>`;
 }
 
 /* ---------- wiring ---------- */
