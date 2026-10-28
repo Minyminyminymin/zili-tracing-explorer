@@ -158,6 +158,19 @@ function binnedPaths(trials,gt,t,{bins,minN,stat}){
  for(const binsP of acc){let seg=[];for(const c of binsP){if(c.length<minN){if(seg.length>1)out.push(seg);seg=[];continue;}seg.push([0,1,2].map(k=>stat==='median'?mid(c.map(p=>p[k])):c.reduce((x,p)=>x+p[k],0)/c.length));}if(seg.length>1)out.push(seg);}
  return out;
 }
+// 1 mm is the same length on every axis, and every sample stays in the scene. The camera starts zoomed onto the
+// ground truth (or the central 96% of the samples when there is none); zoom out to see samples far outside it.
+function camFor(traces){
+ const all=[[],[],[]],ref=[[],[],[]];
+ for(const tr of traces){if(tr.type!=='scatter3d'||tr.mode==='text')continue;const gt=/^Ground truth|ground truth|wireframe|ellipse|circle|target/i.test(tr.name||'')&&!/Trial|mean|AA|ZZ/.test(tr.name||'');
+  ['x','y','z'].forEach((k,i)=>{for(const v of tr[k]||[])if(Number.isFinite(v)){all[i].push(v);if(gt)ref[i].push(v);}});}
+ if(!all[0].length)return {eye:{x:.35,y:-1.9,z:.55},up:{x:0,y:0,z:1}};
+ const q=(a,f)=>{const b=[...a].sort((x,y)=>x-y);return b[Math.floor(f*(b.length-1))];};
+ const lo=all.map(a=>Math.min(...a)),hi=all.map(a=>Math.max(...a)),mid=lo.map((v,i)=>(v+hi[i])/2),maxR=Math.max(...hi.map((v,i)=>v-lo[i]))||1;
+ const R=ref[0].length?ref:all.map(a=>[q(a,.02),q(a,.98)]),rl=R.map(a=>Math.min(...a)),rh=R.map(a=>Math.max(...a)),c=rl.map((v,i)=>(v+rh[i])/2),span=Math.max(...rh.map((v,i)=>v-rl[i]))||maxR;
+ const center=c.map((v,i)=>(v-mid[i])/maxR),k=Math.max(.5,3.4*span/maxR),d=[.18,-1,.29],n=Math.hypot(...d);
+ return {center:{x:center[0],y:center[1],z:center[2]},eye:{x:center[0]+d[0]/n*k,y:center[1]+d[1]/n*k,z:center[2]+d[2]/n*k},up:{x:0,y:0,z:1}};
+}
 const line=(pts,o)=>({type:'scatter3d',mode:'lines',x:pts.map(p=>p?p[0]:null),y:pts.map(p=>p?p[2]:null),z:pts.map(p=>p?p[1]:null),...o});
 function renderViz(){
  const plot=$('vizPlot'),empty=$('vizEmpty'),head=$('vizHead');
@@ -212,7 +225,7 @@ function renderViz(){
  head.querySelectorAll('[data-trial]').forEach(b=>b.onclick=()=>{st.trial=b.dataset.trial;render();});
  const ax=n=>({title:{text:n,font:{size:12}},gridcolor:'#e6e9e9',zerolinecolor:'#d7dcdc',color:'#5d696f',backgroundcolor:'rgba(0,0,0,0)',showspikes:false});
  const layout={paper_bgcolor:'rgba(0,0,0,0)',font:{family:'Inter, system-ui, sans-serif',size:12,color:'#1c2226'},margin:{l:0,r:0,t:0,b:0},showlegend:true,legend:{x:0,y:1,bgcolor:'rgba(255,255,255,.7)',font:{size:11}},
-  scene:{aspectmode:t.startsWith('Cube')?'cube':'data',xaxis:ax('X (mm)'),yaxis:ax('Z depth (mm)'),zaxis:ax('Y (mm)'),camera:{eye:{x:.35,y:-1.9,z:.55},up:{x:0,y:0,z:1}}},uirevision:t};
+  scene:{aspectmode:'data',xaxis:ax('X (mm)'),yaxis:ax('Z depth (mm)'),zaxis:ax('Y (mm)'),camera:camFor(traces)},uirevision:t+'|'+P.join(',')+'|'+(st.session||'')};
  const draw=()=>window.Plotly.react(plot,traces,layout,{displaylogo:false,responsive:true,scrollZoom:false,modeBarButtonsToRemove:['toImage']});
  if(window.Plotly)draw();else addEventListener('load',draw,{once:true});
 }
