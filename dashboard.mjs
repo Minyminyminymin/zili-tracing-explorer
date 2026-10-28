@@ -3,6 +3,7 @@
 import * as ses from './session.mjs';
 import * as inv from './inventory.mjs';
 import {groundTruth,loadTrefoil3DReference} from './session-geometry.mjs';
+import {binnedPaths} from './paths.mjs';
 const $=id=>document.getElementById(id);
 const css=n=>getComputedStyle(document.documentElement).getPropertyValue(n).trim();
 const fmt=(x,n=1)=>x===null||x===undefined||!Number.isFinite(x)?'—':x.toFixed(n);
@@ -136,28 +137,6 @@ function gtFor(g,t,only){
  const tr=only||g.trials.find(r=>r.task===t);if(!tr||tr.frame!=='canonical')return [];
  return groundTruth({meta:tr.rec.meta},g.geometry,'canonical',0,ref3D).map(p=>({...p,points:p.points.map(q=>q.map(v=>v*1000))}));
 }
-// Paths summarised along the ground truth: each sample goes to its nearest point on the ground-truth curve,
-// the curve is cut into equal-length bins, and each bin keeps the median (per trial) or mean (across trials) position.
-// 2D trefoil and ellipse are matched on X–Y only, because depth is what the participant adds.
-const XY_ONLY=new Set(['T2D','Ellipse']);
-function track(gt){
- const P=gt.filter(p=>p.kind==='ground');let total=0;
- const paths=P.map(p=>{const s=[0];for(let i=1;i<p.points.length;i++)s.push(s[i-1]+Math.hypot(...p.points[i].map((v,k)=>v-p.points[i-1][k])));total+=s.at(-1);return {pts:p.points,s};});
- return {paths,total};
-}
-function binnedPaths(trials,gt,t,{bins,minN,stat}){
- const T=track(gt);if(!T.total)return [];
- const L=T.total/bins,step=L/4,xy=XY_ONLY.has(t),dense=[];
- T.paths.forEach((p,pi)=>{for(let i=1;i<p.pts.length;i++){const a=p.pts[i-1],b=p.pts[i],len=p.s[i]-p.s[i-1],n=Math.max(1,Math.ceil(len/step));for(let k=0;k<n;k++){const f=k/n;dense.push({q:a.map((v,j)=>v+(b[j]-v)*f),pi,s:p.s[i-1]+len*f});}}});
- const all=dense.map(d=>d.q),ext=Math.max(...[0,1,2].map(k=>Math.max(...all.map(q=>q[k]))-Math.min(...all.map(q=>q[k])))),thr=t.startsWith('Cube')?ext*.21:ext*.35;
- const acc=T.paths.map(p=>Array.from({length:Math.ceil(p.s.at(-1)/L)+1},()=>[]));
- for(const tr of trials)for(const p of tr.p){if(!p)continue;let bd=Infinity,bi=-1;for(let i=0;i<dense.length;i++){const q=dense[i].q,d=xy?Math.hypot(p[0]-q[0],p[1]-q[1]):Math.hypot(p[0]-q[0],p[1]-q[1],p[2]-q[2]);if(d<bd){bd=d;bi=i;}}
-  if(bd>thr)continue;const d=dense[bi];acc[d.pi][Math.floor(d.s/L)].push(p);}
- const mid=a=>{const b=[...a].sort((x,y)=>x-y),m=b.length>>1;return b.length%2?b[m]:(b[m-1]+b[m])/2;};
- const out=[];
- for(const binsP of acc){let seg=[];for(const c of binsP){if(c.length<minN){if(seg.length>1)out.push(seg);seg=[];continue;}seg.push([0,1,2].map(k=>stat==='median'?mid(c.map(p=>p[k])):c.reduce((x,p)=>x+p[k],0)/c.length));}if(seg.length>1)out.push(seg);}
- return out;
-}
 // 1 mm is the same length on every axis, and every sample stays in the scene. The camera starts zoomed onto the
 // ground truth (or the central 96% of the samples when there is none); zoom out to see samples far outside it.
 function camFor(traces){
@@ -193,10 +172,10 @@ function renderViz(){
    const gt=gtFor(g,t,one),pickT=!one&&st.pick?tr.filter(r=>r.id===st.pick):[],shown=pickT.length?pickT:tr,median=st.show==='median'&&gt.length;
    shown.forEach(r=>{const k=tr.indexOf(r),c=PCOL[k%PCOL.length],nm=`Trial ${r.i}${Number.isFinite(r.mean)?` (${fmt(r.mean)} mm)`:''}`;
     if(median){traces.push(line(r.p,{name:nm+', raw',legendgroup:'t'+r.i,showlegend:false,line:{color:c,width:1.5},opacity:.18,hoverinfo:'skip'}));
-     binnedPaths([r],gt,t,{bins:100,minN:2,stat:'median'}).forEach((sg,j)=>traces.push(line(sg,{name:nm+', median',legendgroup:'t'+r.i,showlegend:j===0,line:{color:c,width:4},hovertemplate:`Trial ${r.i}, median path<extra></extra>`})));}
+     (r.rec?.med||binnedPaths(r.p,gt,t,{bins:t.startsWith('Cube')?72:80,minN:2,stat:'median'})).forEach((sg,j)=>traces.push(line(sg,{name:nm+', median',legendgroup:'t'+r.i,showlegend:j===0,line:{color:c,width:4},hovertemplate:`Trial ${r.i}, median path<extra></extra>`})));}
     else traces.push(line(r.p,{name:nm,legendgroup:'t'+r.i,line:{color:c,width:2.5},opacity:.85,hovertemplate:`Trial ${r.i}<extra></extra>`}));
     const a=r.p.find(Boolean),z=[...r.p].reverse().find(Boolean);if(a&&z)traces.push({type:'scatter3d',mode:'markers',x:[a[0],z[0]],y:[a[2],z[2]],z:[a[1],z[1]],marker:{size:[8,7],symbol:['circle','square'],color:c,line:{color:'#fff',width:1.5}},legendgroup:'t'+r.i,showlegend:false,hovertemplate:'%{text}<extra></extra>',text:[`Trial ${r.i} start`,`Trial ${r.i} end`]});});
-   if(st.mean&&shown.length>1&&gt.length)binnedPaths(shown,gt,t,{bins:200,minN:3,stat:'mean'}).forEach((sg,j)=>traces.push(line(sg,{name:`Mean path (${shown.length} trials)`,legendgroup:'mean',showlegend:j===0,line:{color:'#6250d6',width:6},opacity:.9,hoverinfo:'skip'})));
+   if(st.mean&&shown.length>1&&gt.length)binnedPaths(shown.flatMap(r=>r.p),gt,t,{bins:90,minN:3,stat:'mean'}).forEach((sg,j)=>traces.push(line(sg,{name:`Mean path (${shown.length} trials)`,legendgroup:'mean',showlegend:j===0,line:{color:'#6250d6',width:6},opacity:.9,hoverinfo:'skip'})));
    const m=avg(tr.map(r=>r.mean)),all3=g.trials.filter(r=>r.task===t).sort((a,b)=>a.i-b.i);
    const stat=one&&t==='Ellipse'?`aspect ${fmt(one.expected?.aspect,2)}: traced tilt ${fmt(one.shape?.slantDeg,1)}°, ${fmt(one.expected?.slantDeg,1)}° for a circle`:one?`${esc(one.rec?.cond||'')}${one.rec?.dir!=null?`, direction ${one.rec.dir>=0?'+':'−'}`:''}: ${m===null?'distance not recorded':`mean ${fmt(m)} mm`}`:t==='T2D'?'compared between trials, not with a target':m===null?'Distance not recorded':`mean ${fmt(m)} mm`;
    info=`<strong>${esc(TASKNAME[t])}</strong><span>${esc(pid)}, session ${g.n}${g.date?`, ${fmtDate(g.date)}`:''}</span><span>${one?`trial ${one.i} of ${all3.length}`:`${tr.length} trial${tr.length>1?'s':''}`}</span><span>${stat}</span>`;
@@ -211,7 +190,7 @@ function renderViz(){
   }else{
    const c=PCOL[pi%PCOL.length];
    const gt=gtFor(g,t,null);
-   if(st.show==='median'&&gt.length)binnedPaths(tr,gt,t,{bins:200,minN:3,stat:'mean'}).forEach((sg,k)=>traces.push(line(scaleP(sg,sc(g)),{name:pid+' mean path'+(sc(g)!==1?' (scaled)':''),legendgroup:pid,showlegend:k===0,line:{color:c,width:4}})));
+   if(st.show==='median'&&gt.length)binnedPaths(tr.flatMap(r=>r.p),gt,t,{bins:90,minN:3,stat:'mean'}).forEach((sg,k)=>traces.push(line(scaleP(sg,sc(g)),{name:pid+' mean path'+(sc(g)!==1?' (scaled)':''),legendgroup:pid,showlegend:k===0,line:{color:c,width:4}})));
    else tr.forEach((r,k)=>traces.push(line(scaleP(r.p,sc(g)),{name:pid,legendgroup:pid,showlegend:k===0,line:{color:c,width:2},opacity:.6})));
   }
  }
